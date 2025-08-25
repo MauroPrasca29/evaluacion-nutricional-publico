@@ -1,6 +1,6 @@
 "use client"
 
-import { Home, Users, BarChart3, UserPlus, Upload, FileText } from "lucide-react"
+import { Home, Users, BarChart3, UserPlus, Upload } from "lucide-react"
 import type { MenuItem } from "@/types"
 
 interface AppSidebarProps {
@@ -57,15 +57,6 @@ export function AppSidebar({ currentView, setCurrentView, isOpen, setIsOpen }: A
       hoverColor: "hover:bg-indigo-100",
       borderColor: "border-indigo-200",
     },
-    {
-      id: "generate-reports",
-      label: "Generar reportes",
-      icon: FileText,
-      color: "from-pink-400 to-pink-500",
-      bgColor: "bg-pink-50",
-      hoverColor: "hover:bg-pink-100",
-      borderColor: "border-pink-200",
-    },
   ]
 
   const currentItem = menuItems.find((item) => item.id === currentView) || menuItems[0]
@@ -78,28 +69,16 @@ export function AppSidebar({ currentView, setCurrentView, isOpen, setIsOpen }: A
       )}
 
       {/* Sidebar */}
-      <div
+      <aside
         className={`fixed inset-y-0 left-0 w-64 z-50 transform transition-transform duration-300 lg:translate-x-0 lg:relative lg:z-auto ${
           isOpen ? "translate-x-0" : "-translate-x-full"
         } border-r ${currentItem.borderColor} bg-gradient-to-b ${currentItem.bgColor} to-white flex flex-col lg:flex-shrink-0`}
       >
         {/* Header del sidebar */}
-        <div className={`border-b ${currentItem.borderColor} p-6 transition-all duration-500 flex-shrink-0`}>
-          <div className="flex items-center gap-3">
-            <div
-              className={`w-10 h-10 bg-gradient-to-br ${currentItem.color} rounded-xl flex items-center justify-center shadow-sm transition-all duration-500`}
-            >
-              <Users className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <h2 className="font-bold text-slate-800 text-lg">Evaluación</h2>
-              <p className="text-sm text-slate-600 font-medium">Nutricional Infantil</p>
-            </div>
-          </div>
-        </div>
+        
 
         {/* Menú de navegación */}
-        <div className="flex-1 p-3 overflow-y-auto">
+        <nav className="flex-1 p-3 overflow-y-auto">
           <div className="space-y-2">
             {menuItems.map((item) => (
               <button
@@ -119,8 +98,8 @@ export function AppSidebar({ currentView, setCurrentView, isOpen, setIsOpen }: A
               </button>
             ))}
           </div>
-        </div>
-      </div>
+        </nav>
+      </aside>
     </>
   )
 }

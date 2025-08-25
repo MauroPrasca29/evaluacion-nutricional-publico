@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Search, Plus, Eye } from "lucide-react"
+import { Search, Plus, Eye } from 'lucide-react'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { NewChildForm } from "./NewChildForm"
 import { ChildProfile } from "./ChildProfile"
-import type { ThemeColors, NewChildForm as NewChildFormType } from "@/types"
+import type { ThemeColors, NewChildForm as NewChildFormType, Child } from "@/types"
 import { mockChildren } from "@/data/mockData"
 
 interface ChildrenManagementProps {
@@ -18,7 +18,7 @@ interface ChildrenManagementProps {
 
 export function ChildrenManagement({ theme }: ChildrenManagementProps) {
   const [searchTerm, setSearchTerm] = useState("")
-  const [selectedChild, setSelectedChild] = useState<number | null>(null)
+  const [selectedChild, setSelectedChild] = useState<Child | null>(null)
   const [showNewChildForm, setShowNewChildForm] = useState(false)
 
   const filteredChildren = mockChildren.filter(
@@ -33,8 +33,13 @@ export function ChildrenManagement({ theme }: ChildrenManagementProps) {
 
   const handleSaveChild = (childData: NewChildFormType) => {
     console.log("Nuevo niño registrado:", childData)
-    // Aquí se guardaría en la base de datos
+    // Here you would typically update your state or database
     alert("Niño registrado exitosamente")
+    setShowNewChildForm(false)
+  }
+
+  const handleSelectChild = (child: Child) => {
+    setSelectedChild(child)
   }
 
   if (showNewChildForm) {
@@ -42,10 +47,7 @@ export function ChildrenManagement({ theme }: ChildrenManagementProps) {
   }
 
   if (selectedChild) {
-    const child = mockChildren.find((c) => c.id === selectedChild)
-    if (child) {
-      return <ChildProfile child={child} theme={theme} onBack={() => setSelectedChild(null)} />
-    }
+    return <ChildProfile child={selectedChild} theme={theme} onBack={() => setSelectedChild(null)} />
   }
 
   return (
@@ -116,7 +118,7 @@ export function ChildrenManagement({ theme }: ChildrenManagementProps) {
                   <Button
                     variant="outline"
                     className={`${theme.cardBorder} hover:bg-opacity-50 bg-transparent transition-all duration-300 hover:scale-105`}
-                    onClick={() => setSelectedChild(child.id)}
+                    onClick={() => handleSelectChild(child)}
                   >
                     <Eye className="w-4 h-4 mr-2" />
                     Ver perfil

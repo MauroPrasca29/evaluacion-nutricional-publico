@@ -7,7 +7,6 @@ import { ChildrenManagement } from "@/components/ChildrenManagement"
 import { NewFollowUpForm } from "@/components/NewFollowUpForm"
 import { NewChildForm } from "@/components/NewChildForm"
 import { ImportData } from "@/components/ImportData"
-import { ReportsGeneration } from "@/components/ReportsGeneration"
 import { AdvancedStatistics } from "@/components/AdvancedStatistics"
 import { getThemeColors } from "@/utils/theme"
 import type { NewChildForm as NewChildFormType } from "@/types"
@@ -48,8 +47,6 @@ export default function NutritionalAssessmentApp() {
         return <NewFollowUpForm theme={theme} />
       case "import-data":
         return <ImportData theme={theme} />
-      case "generate-reports":
-        return <ReportsGeneration theme={theme} />
       default:
         return <Dashboard theme={theme} onNewChild={handleNewChild} onNavigate={handleNavigate} />
     }
@@ -71,9 +68,9 @@ export default function NutritionalAssessmentApp() {
         />
 
         {/* Main Content */}
-        <div className="flex-1 p-6">
+        <main className="flex-1 p-6 overflow-y-auto">
           <div className="max-w-7xl mx-auto">{renderContent()}</div>
-        </div>
+        </main>
       </div>
     </div>
   )

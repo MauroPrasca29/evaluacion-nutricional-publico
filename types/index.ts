@@ -21,10 +21,17 @@ export interface MedicalRecord {
   date: string
   weight: number
   height: number
+  bmi: number
   observations: string
-  nutritionalStatus: "normal" | "alerta" | "seguimiento"
+  nutritionalStatus: "normal" | "alerta" | "seguimiento" | "riesgo" | "severo"
   vaccinations: string[]
-  recommendations: string
+  recommendations: {
+    dietary: string[]
+    general: string[]
+  }
+  alerts: string[]
+  professional: string
+  reportId?: string
 }
 
 export interface GrowthRecord {
@@ -39,6 +46,7 @@ export interface Stats {
   monthlyFollowUps: number
   activeAlerts: number
   completedAssessments: number
+  pendingAssessments: number
 }
 
 export interface ThemeColors {
@@ -128,3 +136,16 @@ export const PHYSICAL_SIGNS_OPTIONS = [
   "Abdomen distendido",
   "Extremidades delgadas",
 ]
+
+export interface BMICategoryStats {
+  severeUnderweight: number
+  underweight: number
+  normal: number
+  overweight: number
+  obesity: number
+}
+
+export interface GlobalBMIStats {
+  "0-5": BMICategoryStats
+  "6-11": BMICategoryStats
+}
