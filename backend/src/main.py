@@ -28,9 +28,9 @@ async def health_check():
     return {"status": "healthy"}
 
 # TODO: Include routers
-# from .api import auth, children, followups, reports, import_excel
-# app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
-# app.include_router(children.router, prefix="/api/children", tags=["children"])
-# app.include_router(followups.router, prefix="/api/followups", tags=["followups"])
-# app.include_router(reports.router, prefix="/api/reports", tags=["reports"])
-# app.include_router(import_excel.router, prefix="/api/import", tags=["import"])
+from .api import auth, children, followups, reports, import_excel
+app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+app.include_router(children.router, prefix="/api/children", tags=["children"])
+app.include_router(followups.router, prefix="/api/followups", tags=["followups"])
+app.include_router(reports.router, prefix="/api/reports", tags=["reports"])
+app.include_router(import_excel.router, prefix="/api/import", tags=["import"])

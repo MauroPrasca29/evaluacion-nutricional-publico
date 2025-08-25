@@ -29,3 +29,5 @@ INSERT INTO alerts (child_id, alert_type, severity, message) VALUES
 (1, 'followup_due', 'low', 'Próxima evaluación programada para esta semana'),
 (4, 'vaccination_due', 'medium', 'Vacunas pendientes según calendario'),
 (2, 'growth_concern', 'low', 'Monitorear velocidad de crecimiento');
+
+-- Initial data seeds - empty file for structure
