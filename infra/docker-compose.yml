@@ -28,8 +28,8 @@ services:
   # FastAPI Backend
   backend:
     build:
-      context: ../backend
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: infra/Dockerfile.backend
     container_name: nutritional_backend
     restart: unless-stopped
     environment:
