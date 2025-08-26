@@ -80,11 +80,7 @@ jspm_packages/
 .yarn-integrity
 
 # parcel-bundler cache (https://parceljs.org/)
-.cache
 .parcel-cache
-
-# next.js build output
-.next
 
 # nuxt.js build output
 .nuxt
@@ -131,6 +127,7 @@ docker-compose.override.yml
 uploads/
 media/
 static/media/
+backend/uploads/
 
 # Backup files
 *.bak
@@ -183,10 +180,6 @@ dmypy.json
 temp/
 tmp/
 
-# Production builds
-build/
-dist/
-
 # Package files
 *.tar.gz
 *.zip
@@ -223,3 +216,9 @@ dump.rdb
 # Local configuration
 config.local.json
 settings.local.py
+
+# Cache
+*.tsbuildinfo
+
+# Temporary files
+*.temp

@@ -1,6 +1,13 @@
 -- Seed data for Nutritional Assessment System
 -- This file contains test data for development
 
+-- Insert default locations
+INSERT INTO locations (id, name, address, city, state, country, phone, email) VALUES
+(uuid_generate_v4(), 'Sede Central Bogotá', 'Calle 100 #15-20', 'Bogotá', 'Cundinamarca', 'Colombia', '+57 1 234-5678', 'bogota@nutricion.com'),
+(uuid_generate_v4(), 'Sede Medellín', 'Carrera 70 #52-21', 'Medellín', 'Antioquia', 'Colombia', '+57 4 234-5678', 'medellin@nutricion.com'),
+(uuid_generate_v4(), 'Sede Cali', 'Avenida 6N #28-10', 'Cali', 'Valle del Cauca', 'Colombia', '+57 2 234-5678', 'cali@nutricion.com'),
+(uuid_generate_v4(), 'Sede Barranquilla', 'Calle 84 #51-15', 'Barranquilla', 'Atlántico', 'Colombia', '+57 5 234-5678', 'barranquilla@nutricion.com');
+
 -- Insert communities
 INSERT INTO communities (id, name, code, municipality, department, country, latitude, longitude, population) VALUES
 (uuid_generate_v4(), 'La Esperanza', 'ESP001', 'Medellín', 'Antioquia', 'Colombia', 6.2442, -75.5812, 1500),
@@ -10,10 +17,14 @@ INSERT INTO communities (id, name, code, municipality, department, country, lati
 (uuid_generate_v4(), 'Buenos Aires', 'BA005', 'Envigado', 'Antioquia', 'Colombia', 6.1701, -75.5847, 2800);
 
 -- Insert default admin user
-INSERT INTO users (id, email, password_hash, first_name, last_name, role, phone, is_active) VALUES
-(uuid_generate_v4(), 'admin@nutricional.com', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj/VcSAg/9S2', 'Admin', 'Sistema', 'admin', '+57 300 123 4567', true),
-(uuid_generate_v4(), 'nutricionista@nutricional.com', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj/VcSAg/9S2', 'María', 'González', 'nutritionist', '+57 301 234 5678', true),
-(uuid_generate_v4(), 'trabajador@nutricional.com', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj/VcSAg/9S2', 'Carlos', 'Rodríguez', 'health_worker', '+57 302 345 6789', true);
+INSERT INTO users (id, email, username, full_name, hashed_password, is_superuser, role) VALUES
+(uuid_generate_v4(), 'admin@nutricion.com', 'admin', 'Administrador Sistema', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj3L3jzjvG4i', TRUE, 'admin');
+
+-- Insert sample nutritionist users
+INSERT INTO users (id, email, username, full_name, hashed_password, role) VALUES
+(uuid_generate_v4(), 'nutricionista1@nutricion.com', 'nutricionista1', 'María García López', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj3L3jzjvG4i', 'nutritionist'),
+(uuid_generate_v4(), 'nutricionista2@nutricion.com', 'nutricionista2', 'Carlos Rodríguez Pérez', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj3L3jzjvG4i', 'nutritionist'),
+(uuid_generate_v4(), 'nutricionista3@nutricion.com', 'nutricionista3', 'Ana Martínez Silva', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj3L3jzjvG4i', 'nutritionist');
 
 -- Insert sample children
 WITH community_ids AS (
