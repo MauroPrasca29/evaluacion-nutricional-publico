@@ -1,159 +1,172 @@
--- Database schema for Nutritional Assessment System
+-- Base de datos: Sistema de evaluación nutricional 
 
--- Enable UUID extension
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+-- Elimina tablas si existen (para evitar errores al ejecutar varias veces)
+DROP TABLE IF EXISTS reportes_individuales CASCADE;
+DROP TABLE IF EXISTS diagnosticos CASCADE;
+DROP TABLE IF EXISTS alertas CASCADE;
+DROP TABLE IF EXISTS seguimiento_sintomas CASCADE;
+DROP TABLE IF EXISTS examenes CASCADE;
+DROP TABLE IF EXISTS datos_antropometricos CASCADE;
+DROP TABLE IF EXISTS seguimientos CASCADE;
+DROP TABLE IF EXISTS infantes CASCADE;
+DROP TABLE IF EXISTS acudientes CASCADE;
+DROP TABLE IF EXISTS sedes CASCADE;
+DROP TABLE IF EXISTS usuarios CASCADE;
+DROP TABLE IF EXISTS roles CASCADE;
+DROP TABLE IF EXISTS sintomas CASCADE;
 
--- Users table
-CREATE TABLE users (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    email VARCHAR(255) UNIQUE NOT NULL,
-    username VARCHAR(100) UNIQUE NOT NULL,
-    full_name VARCHAR(255) NOT NULL,
-    hashed_password VARCHAR(255) NOT NULL,
-    is_active BOOLEAN DEFAULT TRUE,
-    is_superuser BOOLEAN DEFAULT FALSE,
-    role VARCHAR(50) DEFAULT 'user',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+-- Tabla de roles
+CREATE TABLE roles(
+	id_rol SERIAL PRIMARY KEY,
+	nombre VARCHAR(100) UNIQUE NOT NULL,
+	descripcion TEXT
 );
 
--- Locations/Sedes table
-CREATE TABLE locations (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    name VARCHAR(255) NOT NULL,
-    address TEXT,
-    city VARCHAR(100),
-    state VARCHAR(100),
-    country VARCHAR(100) DEFAULT 'Colombia',
-    phone VARCHAR(20),
-    email VARCHAR(255),
-    is_active BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+-- Tabla de usuarios
+CREATE TABLE usuarios(
+	id_usuario SERIAL PRIMARY KEY,
+	nombre VARCHAR(150) NOT NULL ,
+	correo VARCHAR(50) UNIQUE NOT NULL,
+	telefono VARCHAR(20) UNIQUE NOT NULL,
+	rol_id INT REFERENCES roles(id_rol),
+	contrasena TEXT NOT NULL,
+	fecha_creado TIMESTAMP DEFAULT Now(),
+	fecha_actualizado TIMESTAMP DEFAULT Now() 	
 );
 
--- Children table
-CREATE TABLE children (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    first_name VARCHAR(100) NOT NULL,
-    last_name VARCHAR(100) NOT NULL,
-    date_of_birth DATE NOT NULL,
-    gender VARCHAR(10) CHECK (gender IN ('male', 'female', 'other')),
-    identification_number VARCHAR(50) UNIQUE,
-    identification_type VARCHAR(20) DEFAULT 'TI',
-    location_id UUID REFERENCES locations(id),
-    guardian_name VARCHAR(255),
-    guardian_phone VARCHAR(20),
-    guardian_email VARCHAR(255),
-    address TEXT,
-    birth_weight DECIMAL(5,2),
-    birth_height DECIMAL(5,2),
-    gestational_age INTEGER,
-    medical_conditions TEXT,
-    allergies TEXT,
-    medications TEXT,
-    is_active BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    created_by UUID REFERENCES users(id)
+-- Tabla de sedes
+CREATE TABLE sedes (
+    id_sede SERIAL PRIMARY KEY,
+    nombre VARCHAR(150) NOT NULL,
+    municipio VARCHAR(100),
+    departamento VARCHAR(100),
+    telefono VARCHAR(20)
 );
 
--- Nutritional assessments/followups table
-CREATE TABLE nutritional_assessments (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    child_id UUID REFERENCES children(id) ON DELETE CASCADE,
-    assessment_date DATE NOT NULL,
-    age_months INTEGER NOT NULL,
-    weight DECIMAL(5,2) NOT NULL,
-    height DECIMAL(5,2) NOT NULL,
-    head_circumference DECIMAL(5,2),
-    arm_circumference DECIMAL(5,2),
-    bmi DECIMAL(5,2) GENERATED ALWAYS AS (weight / ((height/100) * (height/100))) STORED,
-    weight_for_age_zscore DECIMAL(5,2),
-    height_for_age_zscore DECIMAL(5,2),
-    weight_for_height_zscore DECIMAL(5,2),
-    bmi_for_age_zscore DECIMAL(5,2),
-    nutritional_status VARCHAR(50),
-    growth_status VARCHAR(50),
-    feeding_type VARCHAR(50),
-    dietary_intake TEXT,
-    physical_activity TEXT,
-    clinical_observations TEXT,
-    recommendations TEXT,
-    next_appointment DATE,
-    assessed_by UUID REFERENCES users(id),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+-- Tabla de acudientes
+CREATE TABLE acudientes (
+    id_acudiente SERIAL PRIMARY KEY,
+    nombre VARCHAR(150) NOT NULL,
+    telefono VARCHAR(20),
+    correo VARCHAR(100),
+    direccion TEXT,
+    fecha_creado TIMESTAMP DEFAULT Now(),
+    fecha_actualizado TIMESTAMP DEFAULT Now()
 );
 
--- Alerts table
-CREATE TABLE alerts (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    child_id UUID REFERENCES children(id) ON DELETE CASCADE,
-    assessment_id UUID REFERENCES nutritional_assessments(id) ON DELETE CASCADE,
-    alert_type VARCHAR(50) NOT NULL,
-    severity VARCHAR(20) CHECK (severity IN ('low', 'medium', 'high', 'critical')),
-    title VARCHAR(255) NOT NULL,
-    description TEXT,
-    is_resolved BOOLEAN DEFAULT FALSE,
-    resolved_at TIMESTAMP WITH TIME ZONE,
-    resolved_by UUID REFERENCES users(id),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+-- Tabla de infantes
+CREATE TABLE infantes(
+	id_infante SERIAL PRIMARY KEY,
+	nombre VARCHAR(100) NOT NULL,
+	fecha_nacimiento DATE NOT NULL CHECK(fecha_nacimiento <= CURRENT_DATE),
+	genero VARCHAR(10) NOT NULL,
+    acudiente_id INT REFERENCES acudientes(id_acudiente) ON DELETE SET NULL,
+    sede_id INT REFERENCES sedes(id_sede) ON DELETE SET NULL,
+	fecha_creado TIMESTAMP DEFAULT Now(),
+	fecha_actualizado TIMESTAMP DEFAULT Now()
 );
 
--- Reports table
-CREATE TABLE reports (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    title VARCHAR(255) NOT NULL,
-    report_type VARCHAR(50) NOT NULL,
-    parameters JSONB,
-    file_path VARCHAR(500),
-    file_size INTEGER,
-    generated_by UUID REFERENCES users(id),
-    location_id UUID REFERENCES locations(id),
-    date_from DATE,
-    date_to DATE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+-- Tabla de seguimientos
+CREATE TABLE seguimientos(
+	id_seguimiento SERIAL PRIMARY KEY,
+	infante_id INT REFERENCES infantes(id_infante) ON DELETE CASCADE,
+	encargado_id INT REFERENCES usuarios(id_usuario),
+	fecha DATE NOT NULL,
+	observacion TEXT
 );
 
--- File uploads table
-CREATE TABLE file_uploads (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    original_filename VARCHAR(255) NOT NULL,
-    stored_filename VARCHAR(255) NOT NULL,
-    file_path VARCHAR(500) NOT NULL,
-    file_size INTEGER,
-    mime_type VARCHAR(100),
-    upload_type VARCHAR(50),
-    uploaded_by UUID REFERENCES users(id),
-    processed BOOLEAN DEFAULT FALSE,
-    processed_at TIMESTAMP WITH TIME ZONE,
-    error_message TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+-- Tabla de datos antropometricos
+CREATE TABLE datos_antropometricos(
+	id_dato SERIAL PRIMARY KEY,
+	seguimiento_id INT REFERENCES seguimientos(id_seguimiento) ON DELETE CASCADE,
+	peso DECIMAL(5,2) NOT NULL CHECK (peso > 0),
+	estatura DECIMAL(5,2) NOT NULL CHECK (estatura > 0),
+    imc DECIMAL(5,2),
+	circunferencia_braquial DECIMAL (5,2) CHECK (circunferencia_braquial > 0),
+	perimetro_cefalico DECIMAL (5,2) CHECK (perimetro_cefalico > 0),
+	pliegue_cutaneo DECIMAL (5,2) CHECK (pliegue_cutaneo > 0),
+	perimetro_abdominal DECIMAL (5,2) CHECK (perimetro_abdominal > 0)
 );
 
--- Create indexes for better performance
-CREATE INDEX idx_children_location ON children(location_id);
-CREATE INDEX idx_children_active ON children(is_active);
-CREATE INDEX idx_children_birth_date ON children(date_of_birth);
-CREATE INDEX idx_assessments_child ON nutritional_assessments(child_id);
-CREATE INDEX idx_assessments_date ON nutritional_assessments(assessment_date);
-CREATE INDEX idx_alerts_child ON alerts(child_id);
-CREATE INDEX idx_alerts_resolved ON alerts(is_resolved);
-CREATE INDEX idx_reports_type ON reports(report_type);
-CREATE INDEX idx_reports_location ON reports(location_id);
+-- Tabla de examenes
+CREATE TABLE examenes(
+	id_examenes SERIAL PRIMARY KEY,
+	seguimiento_id INT REFERENCES seguimientos(id_seguimiento) ON DELETE CASCADE,
+	hemoglobina DECIMAL (5,2)
+);
 
--- Create updated_at trigger function
-CREATE OR REPLACE FUNCTION update_updated_at_column()
+-- Tabla de sintomas
+CREATE TABLE sintomas(
+	id_sintoma SERIAL PRIMARY KEY,
+	nombre VARCHAR (100) UNIQUE NOT NULL
+);
+
+-- Tabla de relación entre seguimiento y sintomas
+CREATE TABLE seguimiento_sintomas (
+	sintoma_id INT REFERENCES sintomas(id_sintoma) ON DELETE CASCADE,
+	seguimiento_id INT REFERENCES seguimientos(id_seguimiento) ON DELETE CASCADE,
+	PRIMARY KEY(sintoma_id, seguimiento_id)
+);
+
+-- Tabla de diagnosticos
+CREATE TABLE diagnosticos (
+    id_diagnostico SERIAL PRIMARY KEY,
+    seguimiento_id INT REFERENCES seguimientos(id_seguimiento) ON DELETE CASCADE,
+    diagnostico TEXT NOT NULL,
+    recomendaciones JSONB,
+    fecha_generado TIMESTAMP DEFAULT NOW()
+);
+
+-- Tabla de reportes
+CREATE TABLE reportes_individuales (
+    id_reporte SERIAL PRIMARY KEY,
+    infante_id INT REFERENCES infantes(id_infante) ON DELETE CASCADE,
+    seguimiento_id INT REFERENCES seguimientos(id_seguimiento) ON DELETE CASCADE,
+    nutricionista_id INT REFERENCES usuarios(id_usuario) ON DELETE SET NULL,
+    fecha_reporte TIMESTAMP DEFAULT NOW(),
+    archivo_url TEXT,    
+    observaciones TEXT
+);
+
+-- Tabla de alertas
+CREATE TABLE alertas (
+    id_alerta SERIAL PRIMARY KEY,
+    infante_id INT REFERENCES infantes(id_infante) ON DELETE CASCADE,
+    seguimiento_id INT REFERENCES seguimientos(id_seguimiento),
+    tipo_alerta VARCHAR(100) NOT NULL, -- Ej: Riesgo de desnutrición, Seguimiento vencido
+    mensaje TEXT NOT NULL,
+    estado_alerta VARCHAR(20) DEFAULT 'pendiente', -- pendiente, resuelta
+    fecha_creacion TIMESTAMP DEFAULT NOW(),
+    fecha_resuelta TIMESTAMP
+);
+
+-- Indices
+CREATE UNIQUE INDEX idx_usuarios_correo ON usuarios(correo);
+CREATE UNIQUE INDEX idx_usuarios_telefono ON usuarios(telefono);
+CREATE INDEX idx_infantes_nombre ON infantes(nombre);
+CREATE INDEX idx_infantes_genero ON infantes(genero);
+CREATE INDEX idx_infantes_acudiente ON infantes(acudiente_id);
+CREATE INDEX idx_seguimientos_infante ON seguimientos(infante_id);
+CREATE INDEX idx_seguimientos_encargado ON seguimientos(encargado_id);
+CREATE INDEX idx_seguimientos_fecha ON seguimientos(fecha);
+CREATE INDEX idx_datos_antropometricos_seguimiento ON datos_antropometricos(seguimiento_id);
+CREATE INDEX idx_examenes_seguimiento ON examenes(seguimiento_id);
+CREATE UNIQUE INDEX idx_sintomas_nombre ON sintomas(nombre);
+CREATE INDEX idx_seguimiento_sintomas_seguimiento ON seguimiento_sintomas(seguimiento_id);
+CREATE INDEX idx_seguimiento_sintomas_sintoma ON seguimiento_sintomas(sintoma_id);
+
+
+-- Triggers
+CREATE OR REPLACE FUNCTION calcular_imc()
 RETURNS TRIGGER AS $$
 BEGIN
-    NEW.updated_at = CURRENT_TIMESTAMP;
-    RETURN NEW;
+  IF NEW.estatura > 0 THEN
+    NEW.imc := NEW.peso / ((NEW.estatura/100) * (NEW.estatura/100));
+  END IF;
+  RETURN NEW;
 END;
-$$ language 'plpgsql';
+$$ LANGUAGE plpgsql;
 
--- Create triggers for updated_at
-CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_locations_updated_at BEFORE UPDATE ON locations FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_children_updated_at BEFORE UPDATE ON children FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_assessments_updated_at BEFORE UPDATE ON nutritional_assessments FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER trg_calcular_imc BEFORE INSERT OR UPDATE ON datos_antropometricos FOR EACH ROW EXECUTE FUNCTION calcular_imc();
+
