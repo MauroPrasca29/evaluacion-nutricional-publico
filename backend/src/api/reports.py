@@ -6,7 +6,7 @@ from __future__ import annotations
 import io
 import math
 from datetime import date, datetime
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 import numpy as np
 import pandas as pd
@@ -14,9 +14,9 @@ from fastapi import APIRouter, HTTPException, Path
 from fastapi.responses import JSONResponse, StreamingResponse
 
 # Reutilizamos el almacenamiento del import
-from src.api.import_excel import VectorStore
+from api.import_excel import VectorStore
 
-router = APIRouter(tags=["Reports"])
+router = APIRouter(prefix="/reports", tags=["Reports"])
 
 
 # ----------------- Utilidades -----------------
@@ -42,13 +42,11 @@ def _parse_date(v) -> Optional[date]:
     s = str(v).strip()
     if not s:
         return None
-    # intenta varios formatos comunes
     for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y"):
         try:
             return datetime.strptime(s, fmt).date()
         except Exception:
             continue
-    # pandas suele pasar timestamps/seriales ya convertibles
     try:
         return pd.to_datetime(v).date()
     except Exception:
@@ -78,7 +76,6 @@ def _bmi(weight_kg: Optional[float], height_cm: Optional[float]) -> Optional[flo
 def _bmi_category(bmi: Optional[float]) -> str:
     if bmi is None:
         return "unknown"
-    # Clasificación simplificada OMS adultos (placeholder)
     if bmi < 18.5:
         return "underweight"
     if bmi < 25:
@@ -87,15 +84,12 @@ def _bmi_category(bmi: Optional[float]) -> str:
         return "overweight"
     return "obesity"
 
-
 def _load_dataframe(import_id: str) -> pd.DataFrame:
     store = VectorStore(import_id)
     if not store.load():
         raise HTTPException(status_code=404, detail="No existe vector store para ese import_id")
-    # payloads es una lista[dict] de filas originales
     df = pd.DataFrame(store.payloads).copy()
 
-    # Normaliza columnas esperadas (si faltan, créalas vacías)
     expected = [
         "document_type", "document_number", "first_name", "last_name",
         "sex", "birth_date", "height_cm", "weight_kg", "notes"
@@ -104,7 +98,6 @@ def _load_dataframe(import_id: str) -> pd.DataFrame:
         if c not in df.columns:
             df[c] = np.nan
 
-    # Limpieza y cálculos
     df["sex"] = df["sex"].apply(lambda x: _to_str(x).upper())
     df["birth_date_parsed"] = df["birth_date"].apply(_parse_date)
     df["age_years"] = df["birth_date_parsed"].apply(_age_years)
@@ -118,7 +111,7 @@ def _load_dataframe(import_id: str) -> pd.DataFrame:
 
 
 # ----------------- Endpoints -----------------
-@router.get("/api/reports", summary="Listado de endpoints de reportes")
+@router.get("/", summary="Listado de endpoints de reportes")
 async def reports_index():
     return {
         "endpoints": [
@@ -129,7 +122,7 @@ async def reports_index():
 
 
 @router.get(
-    "/api/reports/import/{import_id}/summary",
+    "/import/{import_id}/summary",
     summary="Resumen del dataset importado (conteos, promedios, BMI)"
 )
 async def import_summary(
@@ -140,7 +133,6 @@ async def import_summary(
     total_rows = int(len(df))
     sex_counts = df["sex"].value_counts(dropna=False).to_dict()
 
-    # Estadísticas numéricas (ignorando NaN)
     age_mean = float(np.nanmean(df["age_years"])) if df["age_years"].notna().any() else None
     height_mean = float(np.nanmean(df["height_cm_num"])) if df["height_cm_num"].notna().any() else None
     weight_mean = float(np.nanmean(df["weight_kg_num"])) if df["weight_kg_num"].notna().any() else None
@@ -148,7 +140,6 @@ async def import_summary(
 
     bmi_categories = df["bmi_category"].value_counts(dropna=False).to_dict()
 
-    # Muestra de primeras filas (limpia y amigable)
     preview_cols = [
         "document_type", "document_number", "first_name", "last_name",
         "sex", "birth_date", "height_cm", "weight_kg", "bmi", "bmi_category"
@@ -174,7 +165,7 @@ async def import_summary(
 
 
 @router.get(
-    "/api/reports/import/{import_id}/export",
+    "/import/{import_id}/export",
     summary="Exportar Excel con cálculos (edad, BMI)"
 )
 async def export_enriched_excel(
@@ -182,7 +173,6 @@ async def export_enriched_excel(
 ):
     df = _load_dataframe(import_id)
 
-    # Orden de columnas en el export
     out_cols = [
         "document_type", "document_number", "first_name", "last_name",
         "sex", "birth_date", "height_cm", "weight_kg",
@@ -194,14 +184,13 @@ async def export_enriched_excel(
 
     export_df = df[out_cols].copy()
 
-    # Excel en memoria
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         export_df.to_excel(writer, index=False, sheet_name="reporte")
     output.seek(0)
 
     filename = f"reporte_{import_id}.xlsx"
-    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    headers = {"Content-Disposition": f'attachment; filename=\"{filename}\"'}
     return StreamingResponse(
         output,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
