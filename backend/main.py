@@ -1,14 +1,13 @@
 """
 FastAPI main (modo dev, sin DB obligatoria) para el Sistema de Evaluación Nutricional
 - Carga condicional de settings y DB
-- Registra router `children` (en memoria) y `followups` (en memoria)
+- Registra routers `children`, `followups`, `reports`, `import_excel`, `auth`
 - CORS y TrustedHost con defaults si no hay settings
 """
 from contextlib import asynccontextmanager
 from pathlib import Path
 import logging
 import sys
-from typing import Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -52,39 +51,26 @@ logging.basicConfig(
 )
 logger = logging.getLogger("nutritional-api")
 
-# ---------- Routers (carga tolerante a fallos) ----------
-available_routers = []
-
-# children (en memoria, obligatorio para esta etapa)
-try:
-    from api import children as children
-except Exception:
-    try:
-        import children as children  # noqa
-    except Exception as e:
-        logger.error(f"No se pudo cargar el router 'children': {e}")
-        children = None
-
-# Otros routers (opcionales)
+# ---------- Función para carga segura de routers ----------
 def _try_import_router(mod_path: str, attr: str = "router"):
     try:
         mod = __import__(mod_path, fromlist=[attr])
-        r = getattr(mod, attr, None)
-        if r:
-            return r
-    except Exception:
+        return getattr(mod, attr, None)
+    except Exception as e:
+        logger.error(f"No se pudo cargar el router '{mod_path}': {e}")
         return None
 
-auth_router = _try_import_router("api.auth")
-followups_router = _try_import_router("api.followups")   # 👈 nuestro CRUD
+# ---------- Routers ----------
+children_router = _try_import_router("api.children")
+followups_router = _try_import_router("api.followups")
 reports_router = _try_import_router("api.reports")
 import_excel_router = _try_import_router("api.import_excel")
+auth_router = _try_import_router("api.auth")
 
 # ---------- Lifespan ----------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Iniciando Nutritional Assessment API...")
-    # Crear tablas si hay DB
     if _engine and _Base:
         try:
             _Base.metadata.create_all(bind=_engine)
@@ -148,20 +134,20 @@ async def root():
     }
 
 # ---------- Registro de routers ----------
-if children and getattr(children, "router", None):
-    app.include_router(children.router, prefix="/api/children", tags=["children"])
+if children_router:
+    app.include_router(children_router, prefix="/api/children", tags=["children"])
 
-if auth_router:
-    app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
-
-if followups_router:   # 👈 habilitamos el CRUD de followups
+if followups_router:
     app.include_router(followups_router, prefix="/api/followups", tags=["followups"])
 
 if reports_router:
-    app.include_router(reports_router, prefix="/api/reports", tags=["reports"])
+    app.include_router(reports_router, prefix="/api/reports")  # tags ya están en reports.py
 
 if import_excel_router:
-    app.include_router(import_excel_router, prefix="/api/import", tags=["import"])
+    app.include_router(import_excel_router, prefix="/api/import")  # tags ya están en import_excel.py
+
+if auth_router:
+    app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 
 # ---------- Manejadores globales ----------
 @app.exception_handler(Exception)
