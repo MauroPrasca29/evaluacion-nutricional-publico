@@ -1,9 +1,9 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import APIRouter, HTTPException
 from typing import List
 from datetime import date
 from pydantic import BaseModel
 
-app = FastAPI()
+router = APIRouter(prefix="/followups")
 
 # ---- Modelos ----
 class FollowUpBase(BaseModel):
@@ -28,15 +28,15 @@ counter = 1
 
 # ---- Endpoints ----
 
-# Obtener todos los follow-ups
-@app.get("/followups/", response_model=List[FollowUp])
+@router.get("/", response_model=List[FollowUp])
 async def get_followups():
+    """Obtener todos los follow-ups"""
     return followups
 
 
-# Crear un follow-up
-@app.post("/followups/", response_model=FollowUp)
+@router.post("/", response_model=FollowUp)
 async def create_followup(followup: FollowUpCreate):
+    """Crear un follow-up"""
     global counter
     new_followup = FollowUp(id=counter, **followup.dict())
     followups.append(new_followup)
@@ -44,24 +44,24 @@ async def create_followup(followup: FollowUpCreate):
     return new_followup
 
 
-# Obtener follow-up por ID
-@app.get("/followups/{followup_id}", response_model=FollowUp)
+@router.get("/{followup_id}", response_model=FollowUp)
 async def get_followup(followup_id: int):
+    """Obtener follow-up por ID"""
     for f in followups:
         if f.id == followup_id:
             return f
     raise HTTPException(status_code=404, detail="Follow-up not found")
 
 
-# Obtener follow-ups de un niño específico
-@app.get("/followups/child/{child_id}", response_model=List[FollowUp])
+@router.get("/child/{child_id}", response_model=List[FollowUp])
 async def get_child_followups(child_id: int):
+    """Obtener follow-ups de un niño específico"""
     return [f for f in followups if f.child_id == child_id]
 
 
-# Actualizar un follow-up existente
-@app.put("/followups/{followup_id}", response_model=FollowUp)
+@router.put("/{followup_id}", response_model=FollowUp)
 async def update_followup(followup_id: int, followup: FollowUpUpdate):
+    """Actualizar un follow-up existente"""
     for index, f in enumerate(followups):
         if f.id == followup_id:
             updated_followup = FollowUp(id=followup_id, **followup.dict())
@@ -70,9 +70,9 @@ async def update_followup(followup_id: int, followup: FollowUpUpdate):
     raise HTTPException(status_code=404, detail="Follow-up not found")
 
 
-# Eliminar un follow-up
-@app.delete("/followups/{followup_id}", response_model=dict)
+@router.delete("/{followup_id}", response_model=dict)
 async def delete_followup(followup_id: int):
+    """Eliminar un follow-up"""
     for index, f in enumerate(followups):
         if f.id == followup_id:
             followups.pop(index)
