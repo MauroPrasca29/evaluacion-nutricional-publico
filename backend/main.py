@@ -1,91 +1,86 @@
 """
 FastAPI main application for Nutritional Assessment System
 """
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-import logging
-import sys
-from pathlib import Path
+import logging, sys
 
-# Configure logging
+# ---------------- Logging ----------------
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.StreamHandler(sys.stdout)
-    ]
+    handlers=[logging.StreamHandler(sys.stdout)],
 )
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("nutritional-assessment-api")
 
-# Create FastAPI application
+# ---------------- App (crear UNA sola vez) ----------------
 app = FastAPI(
     title="Nutritional Assessment API",
     description="API for managing child nutritional assessments and health monitoring",
     version="1.0.0",
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
 )
 
-# Add CORS middleware
+# ---------------- CORS ----------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:80"],
+    # En dev puedes dejar "*" o restringir a GitHub Codespaces con allow_origin_regex
+    allow_origins=["*"],
+    # allow_origin_regex=r"https://.*\.github\.dev$",
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Health check endpoint
-@app.get("/health")
+# ---------------- Routers ----------------
+# Importación de Excel
+from src.api.import_excel import router as import_excel_router
+app.include_router(import_excel_router, prefix="/import", tags=["Importación Excel"])
+
+# Reports (usa datos del import_id)
+from src.api.reports import router as reports_router
+app.include_router(reports_router)
+
+# ---------------- Endpoints base ----------------
+@app.get("/health", summary="Health check")
 async def health_check():
-    """Health check endpoint for load balancers and monitoring"""
     return {
         "status": "healthy",
         "service": "nutritional-assessment-api",
-        "version": "1.0.0"
+        "version": "1.0.0",
     }
 
-# Root endpoint
-@app.get("/")
+@app.get("/", summary="Root")
 async def root():
-    """Root endpoint with API information"""
     return {
         "message": "Nutritional Assessment API",
         "version": "1.0.0",
         "docs": "/docs",
-        "health": "/health"
+        "health": "/health",
     }
 
-# API endpoints
-@app.get("/api/children")
+# (Placeholders de ejemplo: puedes eliminarlos si no los usas)
+@app.get("/api/children", summary="Get Children")
 async def get_children():
-    """Get all children"""
     return {"children": []}
 
-@app.get("/api/followups")
+@app.get("/api/followups", summary="Get Followups")
 async def get_followups():
-    """Get all followups"""
     return {"followups": []}
 
-@app.get("/api/reports")
-async def get_reports():
-    """Get all reports"""
-    return {"reports": []}
-
-# Global exception handler
+# ---------------- Global exception handler ----------------
 @app.exception_handler(Exception)
-async def global_exception_handler(request, exc):
-    """Global exception handler for unhandled errors"""
-    logger.error(f"Unhandled exception: {exc}", exc_info=True)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error("Unhandled exception", exc_info=True)
     return JSONResponse(
         status_code=500,
-        content={
-            "detail": "Internal server error",
-            "message": "An unexpected error occurred"
-        }
+        content={"detail": "Internal server error", "message": "An unexpected error occurred"},
     )
 
+# ---------------- Local run ----------------
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
@@ -93,5 +88,5 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=8000,
         reload=True,
-        log_level="info"
+        log_level="info",
     )
