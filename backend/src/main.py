@@ -1,139 +1,177 @@
 """
-FastAPI main application for Nutritional Assessment System
+FastAPI main (modo dev, sin DB obligatoria) para el Sistema de Evaluación Nutricional
+- Carga condicional de settings y DB
+- Registra router `children` (en memoria)
+- CORS y TrustedHost con defaults si no hay settings
 """
-from fastapi import FastAPI, HTTPException, Depends
+from contextlib import asynccontextmanager
+from pathlib import Path
+import logging
+import sys
+from typing import Optional
+
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
-from contextlib import asynccontextmanager
-import logging
-import sys
-from pathlib import Path
 
-# Add src to Python path
+# --- Prep ruta para imports absolutos (api/*) ---
 sys.path.append(str(Path(__file__).parent))
 
-from core.config import settings
-from core.security import get_current_user
-from db.session import engine, SessionLocal
-from db.base import Base
+# ---------- Settings opcionales ----------
+try:
+    from core.config import settings  # type: ignore
+    ENV = getattr(settings, "ENVIRONMENT", "development")
+    ALLOWED_HOSTS = getattr(settings, "ALLOWED_HOSTS", ["*"])
+    ALLOWED_ORIGINS = getattr(settings, "ALLOWED_ORIGINS", ["*"])
+except Exception:
+    class _FallbackSettings:
+        ENVIRONMENT = "development"
+        ALLOWED_HOSTS = ["*"]
+        ALLOWED_ORIGINS = ["*"]
+    settings = _FallbackSettings()  # type: ignore
+    ENV = settings.ENVIRONMENT
+    ALLOWED_HOSTS = settings.ALLOWED_HOSTS
+    ALLOWED_ORIGINS = settings.ALLOWED_ORIGINS
 
-# Configure logging
+# ---------- DB opcional ----------
+_engine = None
+_SessionLocal = None
+_Base = None
+try:
+    from db.session import engine as _engine, SessionLocal as _SessionLocal  # type: ignore
+    from db.base import Base as _Base  # type: ignore
+except Exception:
+    pass  # correremos sin DB
+
+# ---------- Logging ----------
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.FileHandler("logs/app.log"),
-        logging.StreamHandler(sys.stdout)
-    ]
+    handlers=[logging.StreamHandler(sys.stdout)]
 )
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("nutritional-api")
 
+# ---------- Routers (carga tolerante a fallos) ----------
+available_routers = []
+
+# children (en memoria, obligatorio para esta etapa)
+try:
+    from api import children as children  # si tu módulo vive en api/children.py
+except Exception:
+    try:
+        # Alternativa: si pegaste el archivo children.py junto a main.py
+        import children as children  # noqa
+    except Exception as e:
+        logger.error(f"No se pudo cargar el router 'children': {e}")
+        children = None
+
+# Otros routers (opcionales)
+def _try_import_router(mod_path: str, attr: str = "router"):
+    try:
+        mod = __import__(mod_path, fromlist=[attr])
+        r = getattr(mod, attr, None)
+        if r:
+            return r
+    except Exception:
+        return None
+
+auth_router = _try_import_router("api.auth")
+followups_router = _try_import_router("api.followups")
+reports_router = _try_import_router("api.reports")
+import_excel_router = _try_import_router("api.import_excel")
+
+# ---------- Lifespan ----------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan events"""
-    # Startup
-    logger.info("Starting Nutritional Assessment API...")
-    
-    # Create database tables
-    try:
-        Base.metadata.create_all(bind=engine)
-        logger.info("Database tables created successfully")
-    except Exception as e:
-        logger.error(f"Error creating database tables: {e}")
-    
+    logger.info("Iniciando Nutritional Assessment API...")
+    # Crear tablas si hay DB
+    if _engine and _Base:
+        try:
+            _Base.metadata.create_all(bind=_engine)
+            logger.info("Tablas creadas OK")
+        except Exception as e:
+            logger.error(f"Error creando tablas: {e}")
     yield
-    
-    # Shutdown
-    logger.info("Shutting down Nutritional Assessment API...")
+    logger.info("Apagando Nutritional Assessment API...")
 
-# Create FastAPI application
+# ---------- App ----------
 app = FastAPI(
     title="Nutritional Assessment API",
-    description="API for managing child nutritional assessments and health monitoring",
+    description="API para evaluación y seguimiento nutricional infantil",
     version="1.0.0",
-    docs_url="/docs" if settings.ENVIRONMENT == "development" else None,
-    redoc_url="/redoc" if settings.ENVIRONMENT == "development" else None,
-    lifespan=lifespan
+    docs_url="/docs" if ENV == "development" else None,
+    redoc_url="/redoc" if ENV == "development" else None,
+    lifespan=lifespan,
 )
 
-# Add security middleware
+# Seguridad de host (usar '*' en dev)
 app.add_middleware(
-    TrustedHostMiddleware, 
-    allowed_hosts=["localhost", "127.0.0.1", "*.localhost", settings.ALLOWED_HOSTS]
+    TrustedHostMiddleware,
+    allowed_hosts=ALLOWED_HOSTS if ALLOWED_HOSTS else ["*"]
 )
 
-# Add CORS middleware
+# CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.ALLOWED_ORIGINS,
+    allow_origins=ALLOWED_ORIGINS if ALLOWED_ORIGINS else ["*"],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Health check endpoint
+# ---------- Health ----------
 @app.get("/health")
 async def health_check():
-    """Health check endpoint for load balancers and monitoring"""
     try:
-        # Test database connection
-        db = SessionLocal()
-        db.execute("SELECT 1")
-        db.close()
-        
+        if _SessionLocal:
+            db = _SessionLocal()
+            db.execute("SELECT 1")
+            db.close()
         return {
             "status": "healthy",
             "service": "nutritional-assessment-api",
             "version": "1.0.0",
-            "environment": settings.ENVIRONMENT
+            "environment": ENV,
+            "db": bool(_SessionLocal),
         }
     except Exception as e:
         logger.error(f"Health check failed: {e}")
         raise HTTPException(status_code=503, detail="Service unavailable")
 
-# Root endpoint
 @app.get("/")
 async def root():
-    """Root endpoint with API information"""
     return {
         "message": "Nutritional Assessment API",
         "version": "1.0.0",
-        "docs": "/docs" if settings.ENVIRONMENT == "development" else "Documentation disabled in production",
-        "health": "/health"
+        "docs": "/docs" if ENV == "development" else "Documentation disabled in production",
+        "health": "/health",
     }
 
-# Include API routers (will be implemented)
-from .api import auth, children, followups, reports, import_excel
-app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
-app.include_router(children.router, prefix="/api/children", tags=["children"])
-app.include_router(followups.router, prefix="/api/followups", tags=["followups"])
-app.include_router(reports.router, prefix="/api/reports", tags=["reports"])
-app.include_router(import_excel.router, prefix="/api/import", tags=["import"])
+# ---------- Registro de routers ----------
+if children and getattr(children, "router", None):
+    app.include_router(children.router, prefix="/api/children", tags=["children"])
 
-# Global exception handler
+if auth_router:
+    app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
+if followups_router:
+    app.include_router(followups_router, prefix="/api/followups", tags=["followups"])
+if reports_router:
+    app.include_router(reports_router, prefix="/api/reports", tags=["reports"])
+if import_excel_router:
+    app.include_router(import_excel_router, prefix="/api/import", tags=["import"])
+
+# ---------- Manejadores globales ----------
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
-    """Global exception handler for unhandled errors"""
     logger.error(f"Unhandled exception: {exc}", exc_info=True)
-    return JSONResponse(
-        status_code=500,
-        content={
-            "detail": "Internal server error",
-            "message": "An unexpected error occurred"
-        }
-    )
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
-# Custom 404 handler
 @app.exception_handler(404)
 async def not_found_handler(request, exc):
-    """Custom 404 handler"""
     return JSONResponse(
         status_code=404,
-        content={
-            "detail": "Not found",
-            "message": f"The requested resource was not found: {request.url.path}"
-        }
+        content={"detail": "Not found", "message": f"Resource not found: {request.url.path}"}
     )
 
 if __name__ == "__main__":
@@ -142,6 +180,7 @@ if __name__ == "__main__":
         "main:app",
         host="0.0.0.0",
         port=8000,
-        reload=settings.ENVIRONMENT == "development",
-        log_level="info"
+        reload=(ENV == "development"),
+        log_level="info",
     )
+
