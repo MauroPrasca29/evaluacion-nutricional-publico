@@ -120,7 +120,6 @@ ehthumbs.db
 Thumbs.db
 
 # Docker
-.dockerignore
 docker-compose.override.yml
 
 # Uploads and media
@@ -186,7 +185,6 @@ tmp/
 *.rar
 
 # Alembic
-alembic/versions/*.py
 !alembic/versions/__init__.py
 
 # Redis dump
