@@ -151,16 +151,16 @@ async def root():
 
 # ---------- Registro de routers ----------
 if children and getattr(children, "router", None):
-    app.include_router(children.router, prefix="/api/children", tags=["children"])
+    app.include_router(children.router, prefix="src/api/children", tags=["children"])
 
 if auth_router:
-    app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
+    app.include_router(auth_router, prefix="src/api/auth", tags=["auth"])
 if followups_router:
-    app.include_router(followups_router, prefix="/api/followups", tags=["followups"])
+    app.include_router(followups_router, prefix="src/api/followups", tags=["followups"])
 if reports_router:
-    app.include_router(reports_router, prefix="/api/reports", tags=["reports"])
+    app.include_router(reports_router, prefix="src/api/reports", tags=["reports"])
 if import_excel_router:
-    app.include_router(import_excel_router, prefix="/api/import", tags=["import"])
+    app.include_router(import_excel_router, prefix="src/api/import", tags=["import"])
 
 # ---------- Manejadores globales ----------
 @app.exception_handler(Exception)
