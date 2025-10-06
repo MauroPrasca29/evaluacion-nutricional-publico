@@ -1,0 +1,14 @@
+version: "3.9"
+
+services:
+  backend:
+    build: ./backend
+    container_name: backend_nutricion
+    environment:
+      DATABASE_URL: postgresql://postgres:bTetrAaOJflcvPQCEcqmrAGLJwgtGgCX@shortline.proxy.rlwy.net:33856/railway
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    command: >
+      sh -c "cd db_sistema_nutricion && alembic upgrade head && cd .. && uvicorn main:app --host 0.0.0.0 --port 8000 --reload"

@@ -1,0 +1,3 @@
+[submodule "backend/db_sistema_nutricion"]
+	path = backend/db_sistema_nutricion
+	url = https://github.com/harlem17/BD_sistema_nutricion

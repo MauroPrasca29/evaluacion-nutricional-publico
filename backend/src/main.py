@@ -76,10 +76,11 @@ def _try_import_router(mod_path: str, attr: str = "router"):
     except Exception:
         return None
 
-auth_router = _try_import_router("api.auth")
-followups_router = _try_import_router("api.followups")
-reports_router = _try_import_router("api.reports")
-import_excel_router = _try_import_router("api.import_excel")
+children_router = _try_import_router("src.api.children")
+followups_router = _try_import_router("src.api.followups")
+reports_router = _try_import_router("src.api.reports")
+import_excel_router = _try_import_router("src.api.import_excel")
+auth_router = _try_import_router("src.api.auth")
 
 # ---------- Lifespan ----------
 @asynccontextmanager
