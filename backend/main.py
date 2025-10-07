@@ -1,21 +1,31 @@
 """
-FastAPI main (modo dev, sin DB obligatoria) para el Sistema de Evaluación Nutricional
+FastAPI main (modo dev, con BD en Railway)
 - Carga condicional de settings y DB
-- Registra routers `children`, `followups`, `reports`, `import_excel`, `auth`
-- CORS y TrustedHost con defaults si no hay settings
+- Registra routers desde src/api/*
+- CORS y TrustedHost con defaults
 """
+
 from contextlib import asynccontextmanager
 from pathlib import Path
 import logging
 import sys
-
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
+from db_sistema_nutricion.app.models import engine, Base
+from db_sistema_nutricion.app import models  # importa modelos
 
-# --- Prep ruta para imports absolutos (api/*) ---
-sys.path.append(str(Path(__file__).parent))
+# --- Base inicial ---
+app = FastAPI()
+Base.metadata.create_all(bind=engine)
+
+@app.get("/")
+def root():
+    return {"status": "ok", "message": "Backend conectado a BD del sistema de nutrición"}
+
+# --- Ajuste de path para src ---
+sys.path.append(str(Path(__file__).parent / "src"))
 
 # ---------- Settings opcionales ----------
 try:
@@ -32,16 +42,6 @@ except Exception:
     ENV = settings.ENVIRONMENT
     ALLOWED_HOSTS = settings.ALLOWED_HOSTS
     ALLOWED_ORIGINS = settings.ALLOWED_ORIGINS
-
-# ---------- DB opcional ----------
-_engine = None
-_SessionLocal = None
-_Base = None
-try:
-    from db.session import engine as _engine, SessionLocal as _SessionLocal  # type: ignore
-    from db.base import Base as _Base  # type: ignore
-except Exception:
-    pass  # correremos sin DB
 
 # ---------- Logging ----------
 logging.basicConfig(
@@ -60,23 +60,18 @@ def _try_import_router(mod_path: str, attr: str = "router"):
         logger.error(f"No se pudo cargar el router '{mod_path}': {e}")
         return None
 
-# ---------- Routers ----------
-children_router = _try_import_router("api.children")
-followups_router = _try_import_router("api.followups")
-reports_router = _try_import_router("api.reports")
-import_excel_router = _try_import_router("api.import_excel")
-auth_router = _try_import_router("api.auth")
+# ---------- Routers desde src/api ----------
+children_router = _try_import_router("src.api.children")
+followups_router = _try_import_router("src.api.followups")
+reports_router = _try_import_router("src.api.reports")
+import_excel_router = _try_import_router("src.api.import_excel")
+auth_router = _try_import_router("src.api.auth")
 
 # ---------- Lifespan ----------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Iniciando Nutritional Assessment API...")
-    if _engine and _Base:
-        try:
-            _Base.metadata.create_all(bind=_engine)
-            logger.info("Tablas creadas OK")
-        except Exception as e:
-            logger.error(f"Error creando tablas: {e}")
+    Base.metadata.create_all(bind=engine)
     yield
     logger.info("Apagando Nutritional Assessment API...")
 
@@ -108,44 +103,22 @@ app.add_middleware(
 # ---------- Health ----------
 @app.get("/health")
 async def health_check():
-    try:
-        if _SessionLocal:
-            db = _SessionLocal()
-            db.execute("SELECT 1")
-            db.close()
-        return {
-            "status": "healthy",
-            "service": "nutritional-assessment-api",
-            "version": "1.0.0",
-            "environment": ENV,
-            "db": bool(_SessionLocal),
-        }
-    except Exception as e:
-        logger.error(f"Health check failed: {e}")
-        raise HTTPException(status_code=503, detail="Service unavailable")
-
-@app.get("/")
-async def root():
     return {
-        "message": "Nutritional Assessment API",
+        "status": "healthy",
+        "service": "nutritional-assessment-api",
         "version": "1.0.0",
-        "docs": "/docs" if ENV == "development" else "Documentation disabled in production",
-        "health": "/health",
+        "environment": ENV,
     }
 
 # ---------- Registro de routers ----------
 if children_router:
     app.include_router(children_router, prefix="/api/children", tags=["children"])
-
 if followups_router:
     app.include_router(followups_router, prefix="/api/followups", tags=["followups"])
-
 if reports_router:
-    app.include_router(reports_router, prefix="/api/reports")  # tags ya están en reports.py
-
+    app.include_router(reports_router, prefix="/api/reports")
 if import_excel_router:
-    app.include_router(import_excel_router, prefix="/api/import")  # tags ya están en import_excel.py
-
+    app.include_router(import_excel_router, prefix="/api/import")
 if auth_router:
     app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 
