@@ -13,8 +13,9 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
-from db_sistema_nutricion.app.models import engine, Base
-from db_sistema_nutricion.app import models  # importa modelos
+from src.db.session import engine
+from src.db.base import Base
+from src.db import models  # Importa tus modelos para que SQLAlchemy los registre
 
 # --- Base inicial ---
 app = FastAPI()
