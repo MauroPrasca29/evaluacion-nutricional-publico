@@ -1,5 +1,6 @@
 """
 FastAPI main (modo dev, con DB opcional) para el Sistema de Evaluación Nutricional
+- Ajusta sys.path para encontrar /app/src (imports de api.* y src.api.*)
 - Carga condicional de settings y DB
 - Registra routers: children, auth, followups, reports, import_excel
 - CORS y TrustedHost configurados dinámicamente
@@ -12,18 +13,26 @@ FastAPI main (modo dev, con DB opcional) para el Sistema de Evaluación Nutricio
 
 from contextlib import asynccontextmanager
 from pathlib import Path
+import importlib
 import logging
 import sys
-from typing import Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
-from sqlalchemy import text  # ✅ necesario para testear la conexión SQL
+from sqlalchemy import text  # para testear la conexión SQL
 
 # --- Configuración de imports ---
-sys.path.append(str(Path(__file__).parent))
+HERE = Path(__file__).parent.resolve()
+SRC_DIR = (HERE / "src").resolve()
+
+# Garantiza que Python vea /app y /app/src
+if str(HERE) not in sys.path:
+    sys.path.append(str(HERE))
+# Prioridad alta para /app/src
+if SRC_DIR.exists() and str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
 
 # ---------- Settings ----------
 try:
@@ -49,7 +58,8 @@ try:
     from db.session import engine as _engine, SessionLocal as _SessionLocal  # type: ignore
     from db.base import Base as _Base  # type: ignore
 except Exception:
-    pass  # correremos sin DB si no está disponible
+    # correremos sin DB si no está disponible
+    pass
 
 # ---------- Logging ----------
 logging.basicConfig(
@@ -60,26 +70,30 @@ logging.basicConfig(
 logger = logging.getLogger("nutritional-api")
 
 # ---------- Cargar routers ----------
-available_routers = []
-
-def _try_import_router(mod_path: str, attr: str = "router"):
-    """Intenta importar routers opcionales sin romper la app"""
-    try:
-        mod = __import__(mod_path, fromlist=[attr])
-        r = getattr(mod, attr, None)
-        if r:
-            logger.info(f"Router cargado: {mod_path}")
-            return r
-    except Exception as e:
-        logger.warning(f"No se pudo cargar router {mod_path}: {e}")
+def _try_import_router(candidates, attr: str = "router"):
+    """
+    Intenta importar un router probando una lista de módulos.
+    Registra logs de éxito/fracaso y devuelve el router si lo encuentra.
+    """
+    for mod_path in candidates:
+        try:
+            mod = importlib.import_module(mod_path)
+            r = getattr(mod, attr, None)
+            if r:
+                logger.info(f"Router cargado: {mod_path}")
+                return r
+            else:
+                logger.warning(f"Módulo {mod_path} importado pero no expone '{attr}'")
+        except Exception as e:
+            logger.warning(f"No se pudo cargar router {mod_path}: {e}")
     return None
 
-# Routers principales
-children_router = _try_import_router("api.children")
-auth_router = _try_import_router("api.auth")
-followups_router = _try_import_router("api.followups")
-reports_router = _try_import_router("api.reports")
-import_excel_router = _try_import_router("api.import_excel")
+# Routers principales (intentando api.* y src.api.*)
+children_router     = _try_import_router(["api.children", "src.api.children"])
+auth_router         = _try_import_router(["api.auth", "src.api.auth"])
+followups_router    = _try_import_router(["api.followups", "src.api.followups"])
+reports_router      = _try_import_router(["api.reports", "src.api.reports"])
+import_excel_router = _try_import_router(["api.import_excel", "src.api.import_excel"])
 
 # ---------- Lifespan ----------
 @asynccontextmanager
@@ -128,7 +142,7 @@ async def health_check():
         db_ok = False
         if _SessionLocal:
             db = _SessionLocal()
-            db.execute(text("SELECT 1"))  # ✅ corregido
+            db.execute(text("SELECT 1"))
             db.close()
             db_ok = True
 

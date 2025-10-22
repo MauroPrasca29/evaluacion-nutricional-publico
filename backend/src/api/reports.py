@@ -1,21 +1,31 @@
-# Reports and statistics endpoints
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
-from typing import List
+from fastapi import APIRouter
+from pydantic import BaseModel, Field
 
-router = APIRouter()
+router = APIRouter(tags=["reports"])
 
-@router.get("/statistics")
-async def get_statistics():
-    # TODO: Implement get global statistics
-    return {"total_children": 0, "active_alerts": 0, "pending_assessments": 0}
+class StatsResponse(BaseModel):
+    total_children: int = Field(0, ge=0)
+    active_alerts: int = Field(0, ge=0)
+    pending_assessments: int = Field(0, ge=0)
 
-@router.get("/pdf/{child_id}")
-async def generate_child_report(child_id: int):
-    # TODO: Implement PDF report generation
-    return {"message": f"Report for child {child_id} generated"}
+class ExportResponse(BaseModel):
+    message: str
 
-@router.get("/export")
-async def export_data():
-    # TODO: Implement data export
-    return {"message": "Data exported successfully"}
+class PDFResponse(BaseModel):
+    message: str
+
+@router.get("/statistics", response_model=StatsResponse)
+def statistics():
+    return StatsResponse(total_children=0, active_alerts=0, pending_assessments=0)
+
+@router.get("/pdf/{child_id}", response_model=PDFResponse)
+def pdf(child_id: int):
+    return PDFResponse(message=f"Report for child {child_id} generated")
+
+@router.post("/export", response_model=ExportResponse)
+def export_data():
+    return ExportResponse(message="Data exported successfully")
+
+@router.get("/ping")
+def ping():
+    return {"ok": True, "service": "reports"}

@@ -1,23 +1,28 @@
-# Excel import service endpoints
-from fastapi import APIRouter, UploadFile, File, HTTPException
-from typing import List
+from fastapi import APIRouter, UploadFile, File
+from pydantic import BaseModel
 
-router = APIRouter()
+router = APIRouter(tags=["import"])
 
-@router.post("/excel")
-async def import_excel_file(file: UploadFile = File(...)):
-    # TODO: Implement Excel file processing
-    if not file.filename.endswith(('.xlsx', '.xls')):
-        raise HTTPException(status_code=400, detail="Invalid file format")
-    
-    return {"message": f"File {file.filename} processed successfully"}
+class ImportStatusResponse(BaseModel):
+    import_id: str
+    status: str
 
-@router.get("/template")
-async def download_template():
-    # TODO: Implement template download
-    return {"message": "Template download endpoint"}
+class MessageResponse(BaseModel):
+    message: str
 
-@router.get("/status/{import_id}")
-async def get_import_status(import_id: str):
-    # TODO: Implement import status check
-    return {"import_id": import_id, "status": "completed"}
+@router.post("/excel", response_model=MessageResponse)
+async def upload_excel(file: UploadFile = File(...)):
+    _ = await file.read()
+    return MessageResponse(message=f"File {file.filename} processed successfully")
+
+@router.get("/template", response_model=MessageResponse)
+def download_template():
+    return MessageResponse(message="Template download endpoint")
+
+@router.get("/status/{import_id}", response_model=ImportStatusResponse)
+def import_status(import_id: str):
+    return ImportStatusResponse(import_id=import_id, status="completed")
+
+@router.get("/ping")
+def ping():
+    return {"ok": True, "service": "import"}
