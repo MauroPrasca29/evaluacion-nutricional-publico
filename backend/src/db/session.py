@@ -1,72 +1,107 @@
+# backend/src/db/session.py
+# -*- coding: utf-8 -*-
 """
 Database session management for Nutritional Assessment API
 -----------------------------------------------------------
-Compatible with local Docker and Railway environments.
-Handles SQLAlchemy engine, session, and table utilities.
+Compatible con Docker local y Railway.
+Maneja engine SQLAlchemy, SessionLocal y helpers de conexión.
 """
 
-from sqlalchemy import create_engine, text
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
-from typing import Generator
-import logging
-import os
+from __future__ import annotations
 
-from src.core.config import settings, get_database_url  # Ajusta si tu estructura cambia
+import os
+import logging
+from typing import Generator
+
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import sessionmaker, Session
 
 logger = logging.getLogger(__name__)
 
 # ============================================================
-# Database Engine
+# Carga de configuración (con fallback si no existe core.config)
 # ============================================================
+try:
+    # Nota: dentro del contenedor, el root es 'src', así que NO uses 'from src.core...'
+    from core.config import settings, get_database_url  # type: ignore
+except Exception:
+    # Fallback si no existe core.config o falla el import
+    class _FallbackSettings:
+        DATABASE_POOL_SIZE = int(os.getenv("DATABASE_POOL_SIZE", "5"))
+        DATABASE_MAX_OVERFLOW = int(os.getenv("DATABASE_MAX_OVERFLOW", "10"))
+        DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 
-def _get_engine():
+    settings = _FallbackSettings()  # type: ignore
+
+    def get_database_url() -> str | None:
+        return os.getenv("DATABASE_URL")
+
+
+# ============================================================
+# Normalización de URL y creación del Engine
+# ============================================================
+def _normalized_db_url(raw_url: str | None) -> str:
     """
-    Crea el engine de SQLAlchemy con fallback local si falla la URL principal.
+    Normaliza el esquema para forzar driver psycopg2 cuando sea necesario.
+    Acepta:
+      - postgresql://...
+      - postgres://... (lo convierte)
     """
+    if not raw_url:
+        # Fallback: construir desde variables sueltas
+        raw_url = (
+            f"postgresql://{os.getenv('POSTGRES_USER', 'postgres')}:"
+            f"{os.getenv('POSTGRES_PASSWORD', 'postgres')}@"
+            f"{os.getenv('POSTGRES_HOST', 'db')}:"
+            f"{os.getenv('POSTGRES_PORT', '5432')}/"
+            f"{os.getenv('POSTGRES_DB', 'railway')}"
+        )
+
+    # Forzar driver explícito
+    if raw_url.startswith("postgres://"):
+        return raw_url.replace("postgres://", "postgresql+psycopg2://", 1)
+    if raw_url.startswith("postgresql://"):
+        return raw_url.replace("postgresql://", "postgresql+psycopg2://", 1)
+    return raw_url
+
+
+def _create_engine():
     try:
-        db_url = get_database_url()
-        if not db_url:
-            # Fallback si no está definida DATABASE_URL
-            db_url = (
-                f"postgresql://{os.getenv('POSTGRES_USER', 'postgres')}:"  # usuario
-                f"{os.getenv('POSTGRES_PASSWORD', 'postgres')}@"           # contraseña
-                f"{os.getenv('POSTGRES_HOST', 'db')}:"                     # host del contenedor
-                f"{os.getenv('POSTGRES_PORT', '5432')}/"                   # puerto
-                f"{os.getenv('POSTGRES_DB', 'railway')}"                   # base de datos
-            )
-
+        db_url = _normalized_db_url(get_database_url())
         engine = create_engine(
             db_url,
             pool_size=getattr(settings, "DATABASE_POOL_SIZE", 5),
             max_overflow=getattr(settings, "DATABASE_MAX_OVERFLOW", 10),
             pool_pre_ping=True,
             echo=getattr(settings, "DEBUG", False),
-            future=True,  # ✅ Requerido para SQLAlchemy 2.x
+            future=True,  # API 2.x
         )
-
         logger.info(f"✅ Database engine created successfully → {db_url}")
         return engine
-
     except Exception as e:
         logger.error(f"❌ Error creating database engine: {e}")
         raise
 
 
-engine = _get_engine()
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
+engine = _create_engine()
+
+SessionLocal: sessionmaker[Session] = sessionmaker(
+    autocommit=False,
+    autoflush=False,
+    bind=engine,
+    expire_on_commit=False,
+    future=True,
+)
 
 
 # ============================================================
-# Dependency for FastAPI
+# Dependencia para FastAPI
 # ============================================================
-
 def get_db() -> Generator[Session, None, None]:
     """
-    Dependency injection for DB sessions.
-    Use it in routes like:
-        db: Session = Depends(get_db)
+    Uso en rutas:
+        def endpoint(db: Session = Depends(get_db)):
+            ...
     """
     db = SessionLocal()
     try:
@@ -76,81 +111,26 @@ def get_db() -> Generator[Session, None, None]:
         db.rollback()
         raise
     finally:
-        db.close()
-
-
-# ============================================================
-# Table Management Utilities
-# ============================================================
-
-def create_tables():
-    """Create all database tables (usually at startup)."""
-    try:
-        from src.db.models import Base  # ensure models are imported
-        Base.metadata.create_all(bind=engine)
-        logger.info("✅ Database tables created successfully")
-    except Exception as e:
-        logger.error(f"Error creating database tables: {e}")
-        raise
-
-
-def drop_tables():
-    """Drop all database tables (use with caution!)."""
-    try:
-        from src.db.models import Base
-        Base.metadata.drop_all(bind=engine)
-        logger.warning("⚠️ Database tables dropped successfully")
-    except Exception as e:
-        logger.error(f"Error dropping database tables: {e}")
-        raise
-
-
-# ============================================================
-# High-Level Database Manager
-# ============================================================
-
-class DatabaseManager:
-    """High-level database utilities."""
-
-    @staticmethod
-    def test_connection() -> bool:
-        """Test if database connection works."""
         try:
-            db = SessionLocal()
-            db.execute(text("SELECT 1"))  # ✅ SQLAlchemy 2.x requiere text()
             db.close()
-            logger.info("✅ Database connection successful")
-            return True
-        except Exception as e:
-            logger.error(f"❌ Database connection test failed: {e}")
-            return False
+        except Exception as exc:
+            logger.warning("No se pudo cerrar la sesión de DB: %s", exc)
 
-    @staticmethod
-    def get_connection_info() -> dict:
-        """Return connection parameters."""
-        return {
-            "url": get_database_url(),
-            "pool_size": getattr(settings, "DATABASE_POOL_SIZE", 5),
-            "max_overflow": getattr(settings, "DATABASE_MAX_OVERFLOW", 10),
-            "echo": getattr(settings, "DEBUG", False),
-        }
 
-    @staticmethod
-    def execute_raw_sql(sql: str, params: dict = None) -> list:
-        """Execute raw SQL safely."""
+# ============================================================
+# Utilidades opcionales
+# ============================================================
+def test_connection() -> bool:
+    """Devuelve True si SELECT 1 responde."""
+    try:
         db = SessionLocal()
-        try:
-            result = db.execute(text(sql), params or {})
-            return result.fetchall()
-        except Exception as e:
-            logger.error(f"Error executing raw SQL: {e}")
-            raise
-        finally:
-            db.close()
+        db.execute(text("SELECT 1"))
+        db.close()
+        logger.info("✅ Database connection successful")
+        return True
+    except Exception as e:
+        logger.error(f"❌ Database connection test failed: {e}")
+        return False
 
 
-# ============================================================
-# Initialize Database Manager
-# ============================================================
-
-db_manager = DatabaseManager()
+__all__ = ["engine", "SessionLocal", "get_db", "test_connection"]
