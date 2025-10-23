@@ -1,11 +1,15 @@
+<<<<<<< HEAD
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field, field_validator, constr
+=======
+>>>>>>> fusion-kaleth
 from typing import List, Optional, Dict, Any
-from datetime import date, datetime
-from threading import Lock
+from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel, Field
 
+<<<<<<< HEAD
 # Router (sin prefix, se gestiona en main.py)
 router = APIRouter(tags=["Children"])
 
@@ -47,21 +51,43 @@ class ChildUpdate(BaseModel):
     sex: Optional[str] = Field(None, pattern=r"^(male|female|other)$")
     birth_date: Optional[date] = None
     caregiver_name: Optional[str] = Field(None, max_length=120)
+=======
+router = APIRouter(tags=["children"])
 
-class Child(ChildBase):
+# ====== Schemas ======
+class ChildCreate(BaseModel):
+    nombre: str = Field(..., min_length=1, examples=["Ana María Pérez Rojas"])
+    fecha_nacimiento: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$", examples=["2021-05-10"])
+    genero: str = Field(..., min_length=1, examples=["F", "M"])
+    sede_id: int = Field(..., ge=1, examples=[1])
+    acudiente_id: Optional[int] = Field(None, ge=1)
+
+class ChildUpdate(BaseModel):
+    nombre: Optional[str] = Field(None, min_length=1)
+    fecha_nacimiento: Optional[str] = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    genero: Optional[str] = None
+    sede_id: Optional[int] = Field(None, ge=1)
+    acudiente_id: Optional[int] = Field(None, ge=1)
+>>>>>>> fusion-kaleth
+
+class ChildOut(BaseModel):
     id: int
-    created_at: datetime
-    updated_at: datetime
+    nombre: str
+    fecha_nacimiento: str
+    genero: str
+    sede_id: int
+    acudiente_id: Optional[int] = None
 
-class ChildDetail(Child):
-    measurements: List[Measurement]
+# ====== Memoria temporal (placeholder) ======
+_DB: Dict[int, Dict[str, Any]] = {}
+_SEQ = 0
 
-class PaginatedChildren(BaseModel):
-    total: int
-    page: int
-    per_page: int
-    items: List[Child]
+def _next_id() -> int:
+    global _SEQ
+    _SEQ += 1
+    return _SEQ
 
+<<<<<<< HEAD
 # =============================
 # In-memory stores
 # =============================
@@ -69,11 +95,19 @@ _children: Dict[int, ChildDetail] = {}
 _measurement_seq: int = 0
 _child_seq: int = 0
 _lock = Lock()
+=======
+# ====== Helpers ======
+def _sanitize_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    cols = {"nombre", "fecha_nacimiento", "genero", "sede_id", "acudiente_id"}
+    return {k: v for k, v in payload.items() if k in cols}
+>>>>>>> fusion-kaleth
 
-# =============================
-# Utils
-# =============================
+# ====== Endpoints ======
+@router.get("/ping")
+def ping():
+    return {"ok": True, "service": "children"}
 
+<<<<<<< HEAD
 def _calc_bmi(weight_kg: float, height_cm: float) -> float:
     h_m = height_cm / 100.0
     return round(weight_kg / (h_m * h_m), 2)
@@ -155,9 +189,36 @@ async def create_child(payload: ChildCreate):
 async def get_child(child_id: int):
     child = _children.get(child_id)
     if not child:
-        raise HTTPException(status_code=404, detail="Child not found")
-    return child
+=======
+@router.get("/", response_model=List[ChildOut])
+def list_children(
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+):
+    items = list(_DB.items())
+    items.sort(key=lambda kv: kv[0])
+    slice_ = items[offset : offset + limit]
+    return [
+        ChildOut(id=cid, **data)  # type: ignore[arg-type]
+        for cid, data in slice_
+    ]
 
+@router.post("/", response_model=ChildOut, status_code=201)
+def create_child(payload: ChildCreate):
+    data = _sanitize_payload(payload.model_dump())
+    new_id = _next_id()
+    _DB[new_id] = data
+    return ChildOut(id=new_id, **data)  # type: ignore[arg-type]
+
+@router.get("/{child_id}", response_model=ChildOut)
+def get_child(child_id: int):
+    data = _DB.get(child_id)
+    if not data:
+>>>>>>> fusion-kaleth
+        raise HTTPException(status_code=404, detail="Child not found")
+    return ChildOut(id=child_id, **data)  # type: ignore[arg-type]
+
+<<<<<<< HEAD
 @router.put("/{child_id}", response_model=ChildDetail)
 async def update_child(child_id: int, payload: ChildUpdate):
     with _lock:
@@ -216,3 +277,20 @@ async def get_history(child_id: int):
 @router.get("/healthz", summary="Health check")
 async def healthcheck() -> Dict[str, Any]:
     return {"status": "ok", "children_count": len(_children)}
+=======
+@router.put("/{child_id}", response_model=ChildOut)
+def update_child(child_id: int, payload: ChildUpdate):
+    if child_id not in _DB:
+        raise HTTPException(status_code=404, detail="Child not found")
+    cur = _DB[child_id]
+    updates = _sanitize_payload(payload.model_dump(exclude_unset=True))
+    cur.update({k: v for k, v in updates.items() if v is not None})
+    return ChildOut(id=child_id, **cur)  # type: ignore[arg-type]
+
+@router.delete("/{child_id}", status_code=204)
+def delete_child(child_id: int):
+    if child_id not in _DB:
+        raise HTTPException(status_code=404, detail="Child not found")
+    del _DB[child_id]
+    # 204 No Content -> FastAPI no devolverá cuerpo
+>>>>>>> fusion-kaleth
