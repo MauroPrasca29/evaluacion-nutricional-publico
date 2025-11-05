@@ -37,9 +37,11 @@ docker-compose ps
 
 ### 📊 Credenciales por Defecto
 
-**Administrador:**
-- Email: admin@nutricion.com
-- Password: password123
+### Credenciales iniciales
+Las credenciales de administración se crean mediante un proceso de seed o manualmente en tu entorno.
+**No se incluyen credenciales por defecto en el repositorio.**
+Configura tus variables a partir de los archivos `.env.example`.
+
 
 **Base de Datos:**
 - Host: localhost:5432
