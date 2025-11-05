@@ -1,0 +1,31 @@
+# Etapa deps
+FROM node:18-alpine AS deps
+WORKDIR /app
+COPY package*.json ./
+RUN apk add --no-cache libc6-compat && npm ci
+
+# Etapa build (producción clásica, genera .next)
+FROM node:18-alpine AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+RUN npm run build
+
+# Etapa runtime
+FROM node:18-alpine AS runner
+WORKDIR /app
+
+# Usuario no-root
+RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
+
+# Copiamos el build "clásico" (NO standalone)
+COPY --from=builder --chown=nextjs:nodejs /app/.next ./.next
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules ./node_modules
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+
+ENV NODE_ENV=production
+EXPOSE 3000
+
+# Si el compose usa "command: npm run dev", este CMD se ignora.
+# Para prod: descomenta la línea de abajo y quita el 'command' en el compose.
+# CMD ["npx", "next", "start", "-p", "3000"]
