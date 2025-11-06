@@ -292,32 +292,123 @@ async def import_excel_file(
 
 @router.get("/template", summary="Descargar plantilla Excel")
 async def download_template():
-    df = pd.DataFrame(
-        [
-            {
-                "document_type": "CC",
-                "document_number": "12345678",
-                "first_name": "NOMBRE",
-                "last_name": "APELLIDO",
-                "sex": "F/M",
-                "birth_date": "2015-01-01",
-                "height_cm": 120,
-                "weight_kg": 23.5,
-                "notes": "Texto libre",
-            }
-        ]
-    )
+    import openpyxl
+    from openpyxl.utils import get_column_letter
+    from openpyxl.worksheet.datavalidation import DataValidation
+
+    # Datos de ejemplo
+    data = [
+        {
+            "Tipo de documento": "CC",
+            "Número de documento": "12345678",
+            "Nombres": "NOMBRE",
+            "Apellidos": "APELLIDO",
+            "Género": "Femenino",  # Opciones: Femenino, Masculino
+            "Fecha de nacimiento": "2015-01-01",
+            "Talla (cm)": 120,
+            "Peso (kg)": 23.5,
+            "Pliegue subescapular (mm)": 8.0,
+            "Perímetro cefálico (cm)": 48.5,
+            "Pliegue cutáneo tricipital (mm)": 7.2,
+            "Nivel de actividad": "Moderada",  # Opciones: Ligera, Moderada, Vigorosa
+            "Tipo de alimentación": "Alimentados con leche materna",  # Opciones: Alimentados con leche materna, Alimentados con fórmula, Alimentados con leche materna + fórmula (todos), NA
+            "Comentarios del cuidador": "Texto libre",
+            "Notas": "Texto libre",
+        }
+    ]
+
+    # Opciones para listas desplegables
+    genero_opciones = ["Femenino", "Masculino"]
+    alimentacion_opciones = [
+        "Alimentados con leche materna",
+        "Alimentados con fórmula",
+        "Alimentados con leche materna + fórmula (todos)",
+        "NA",
+    ]
+    actividad_opciones = ["Ligera", "Moderada", "Vigorosa"]
+
+    # Crear DataFrame
+    df = pd.DataFrame(data)
+
+    # Crear Excel en memoria
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name="plantilla")
+        df.to_excel(writer, index=False, sheet_name="Plantilla")
+
     output.seek(0)
+    wb = openpyxl.load_workbook(output)
+    ws = wb.active
+
+    # Ajustar ancho de columnas al texto
+    for col in ws.columns:
+        max_length = 0
+        col_letter = get_column_letter(col[0].column)
+        for cell in col:
+            try:
+                cell_length = len(str(cell.value))
+                if cell_length > max_length:
+                    max_length = cell_length
+            except Exception:
+                pass
+        adjusted_width = max_length + 2
+        ws.column_dimensions[col_letter].width = adjusted_width
+
+    # Agregar listas desplegables (validación de datos)
+    # Buscar las columnas por nombre
+    headers = [cell.value for cell in ws[1]]
+    col_genero = headers.index("Género") + 1
+    col_alimentacion = headers.index("Tipo de alimentación") + 1
+    col_actividad = headers.index("Nivel de actividad") + 1
+
+    # Rango de filas (desde la segunda hasta la 100 por defecto)
+    max_row = 100
+
+    # Género
+    dv_genero = DataValidation(
+        type="list",
+        formula1='"{}"'.format(",".join(genero_opciones)),
+        showErrorMessage=True,
+        errorTitle="Valor inválido",
+        error="Solo puedes seleccionar uno de los valores de la lista.",
+
+    )
+    ws.add_data_validation(dv_genero)
+    dv_genero.add(f"{get_column_letter(col_genero)}2:{get_column_letter(col_genero)}{max_row}")
+    # Tipo de alimentación
+    dv_alimentacion = DataValidation(
+        type="list",
+        formula1='"{}"'.format(",".join(alimentacion_opciones)),
+        showErrorMessage=True,
+        errorTitle="Valor inválido",
+        error="Solo puedes seleccionar uno de los valores de la lista.",
+
+    )
+    ws.add_data_validation(dv_alimentacion)
+    dv_alimentacion.add(f"{get_column_letter(col_alimentacion)}2:{get_column_letter(col_alimentacion)}{max_row}")
+
+    # Nivel de actividad
+    dv_actividad = DataValidation(
+        type="list",
+        formula1='"{}"'.format(",".join(actividad_opciones)),
+        showErrorMessage=True,
+        errorTitle="Valor inválido",
+        error="Solo puedes seleccionar uno de los valores de la lista.",
+
+    )
+    ws.add_data_validation(dv_actividad)
+    dv_actividad.add(f"{get_column_letter(col_actividad)}2:{get_column_letter(col_actividad)}{max_row}")
+
+    # Guardar el archivo ajustado en memoria
+    final_output = io.BytesIO()
+    wb.save(final_output)
+    final_output.seek(0)
+
     headers = {"Content-Disposition": 'attachment; filename="plantilla_importacion.xlsx"'}
     return StreamingResponse(
-        output,
+        final_output,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers=headers,
     )
-
 
 @router.get("/status/{import_id}", summary="Consultar estado de import")
 async def get_import_status(import_id: str):
