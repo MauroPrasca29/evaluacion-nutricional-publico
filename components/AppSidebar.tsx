@@ -85,7 +85,7 @@ export function AppSidebar({ currentView, setCurrentView, isOpen, setIsOpen }: A
                 key={item.id}
                 className={`w-full flex items-center justify-start gap-3 h-12 px-3 rounded-xl transition-all duration-300 ${
                   currentView === item.id
-                    ? `bg-gradient-to-r ${item.color} text-white shadow-lg scale-105`
+                    ? `bg-[#357CF6] text-white shadow-lg scale-105`
                     : `${item.hoverColor} text-slate-700 hover:text-slate-800 hover:scale-102`
                 }`}
                 onClick={() => {

@@ -32,11 +32,40 @@ export function NewChildForm({ theme, onClose, onSave }: NewChildFormProps) {
     observations: "",
   })
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    onSave(formData)
-    onClose()
-  }
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    // Mapea los datos del formulario a los campos esperados por la API
+    const payload = {
+      nombre: formData.name,
+      fecha_nacimiento: formData.birthDate, // formato YYYY-MM-DD
+      genero: formData.gender === "masculino" ? "M" : "F",
+      sede_id: 1, // Cambia esto según tu lógica (puedes obtenerlo de contexto o selección)
+      acudiente_id: 1, // Cambia esto según tu lógica (puedes obtenerlo de contexto o selección)
+      // Si tu API acepta más campos, agrégalos aquí
+    };
+
+    try {
+      const response = await fetch("http://localhost:8000/api/children", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        onSave(data); // Puedes pasar el niño creado
+        onClose();
+      } else {
+        // Maneja el error (puedes mostrar un mensaje)
+        alert("Error al registrar el niño");
+      }
+    } catch (error) {
+      alert("Error de conexión con el servidor");
+    }
+  };
 
   return (
     <div className="space-y-6">

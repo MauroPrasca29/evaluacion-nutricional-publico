@@ -7,10 +7,6 @@ FastAPI main (modo dev, con DB opcional) para el Sistema de Evaluación Nutricio
 - Incluye healthcheck para Docker (/health y /healthz)
 """
 
-# ===============================================
-# Autor: Mauro Prasca T00065353
-# ===============================================
-
 from contextlib import asynccontextmanager
 from pathlib import Path
 import importlib

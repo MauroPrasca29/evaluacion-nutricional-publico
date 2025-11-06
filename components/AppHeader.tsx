@@ -27,7 +27,7 @@ export function AppHeader({ theme, setSidebarOpen }: AppHeaderProps) {
   return (
     <>
       <header
-        className={`w-full border-b ${theme.headerBorder} bg-gradient-to-r ${theme.buttonColor} shadow-lg transition-all duration-500 relative z-10`}
+          className="w-full border-b bg-[#357CF6] shadow-lg transition-all duration-500 relative z-10"
       >
         <div className="flex h-16 items-center justify-between px-6">
           <div className="flex items-center gap-6">
