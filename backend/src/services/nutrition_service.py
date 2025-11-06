@@ -1015,8 +1015,13 @@ class NutritionService:
                     else:
                         valor_recomendado_str = f"{item.get('valor_recomendado_g'):.5f} g" if item.get('valor_recomendado_g') is not None else ""
 
+                    def limpiar_nombre_nutriente(nutriente: str) -> str:
+                        # Elimina unidades y el asterisco
+                        nombre = re.sub(r'\s+(mg/día|g/kg/día|g/día|g|mg|mcg|μg|ug|Aia).*$', '', nutriente)
+                        nombre = nombre.replace('*', '').strip()
+                        return nombre
                     row = [
-                        Paragraph(str(item.get('nutriente') or ''), styles['Normal']),
+                        Paragraph(limpiar_nombre_nutriente(str(item.get('nutriente'))), styles['Normal']),
                         Paragraph(valor_recomendado_str, styles['Normal']),
                         Paragraph(str(nombre or ''), styles['Normal']),
                         Paragraph(str(display_valor_100), styles['Normal']),
