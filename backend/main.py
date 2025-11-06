@@ -1,36 +1,4 @@
 """
-<<<<<<< HEAD
-FastAPI main (modo dev, con BD en Railway)
-- Carga condicional de settings y DB
-- Registra routers desde src/api/*
-- CORS y TrustedHost con defaults
-"""
-
-from contextlib import asynccontextmanager
-from pathlib import Path
-import logging
-import sys
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.responses import JSONResponse
-from src.db.session import engine
-from src.db.base import Base
-from src.db import models  # Importa tus modelos para que SQLAlchemy los registre
-
-# --- Base inicial ---
-app = FastAPI()
-Base.metadata.create_all(bind=engine)
-
-@app.get("/")
-def root():
-    return {"status": "ok", "message": "Backend conectado a BD del sistema de nutrición"}
-
-# --- Ajuste de path para src ---
-sys.path.append(str(Path(__file__).parent / "src"))
-
-# ---------- Settings opcionales ----------
-=======
 FastAPI main (modo dev, con DB opcional) para el Sistema de Evaluación Nutricional
 - Ajusta sys.path para encontrar /app/src (imports de api.* y src.api.*)
 - Carga condicional de settings y DB
@@ -67,7 +35,6 @@ if SRC_DIR.exists() and str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 # ---------- Settings ----------
->>>>>>> fusion-kaleth
 try:
     from core.config import settings  # type: ignore
     ENV = getattr(settings, "ENVIRONMENT", "development")
@@ -83,8 +50,6 @@ except Exception:
     ALLOWED_HOSTS = settings.ALLOWED_HOSTS
     ALLOWED_ORIGINS = settings.ALLOWED_ORIGINS
 
-<<<<<<< HEAD
-=======
 # ---------- DB opcional ----------
 _engine = None
 _SessionLocal = None
@@ -96,7 +61,6 @@ except Exception:
     # correremos sin DB si no está disponible
     pass
 
->>>>>>> fusion-kaleth
 # ---------- Logging ----------
 logging.basicConfig(
     level=logging.INFO,
@@ -105,23 +69,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger("nutritional-api")
 
-<<<<<<< HEAD
-# ---------- Función para carga segura de routers ----------
-def _try_import_router(mod_path: str, attr: str = "router"):
-    try:
-        mod = __import__(mod_path, fromlist=[attr])
-        return getattr(mod, attr, None)
-    except Exception as e:
-        logger.error(f"No se pudo cargar el router '{mod_path}': {e}")
-        return None
-
-# ---------- Routers desde src/api ----------
-children_router = _try_import_router("src.api.children")
-followups_router = _try_import_router("src.api.followups")
-reports_router = _try_import_router("src.api.reports")
-import_excel_router = _try_import_router("src.api.import_excel")
-auth_router = _try_import_router("src.api.auth")
-=======
 # ---------- Cargar routers ----------
 def _try_import_router(candidates, attr: str = "router"):
     """
@@ -147,15 +94,11 @@ auth_router         = _try_import_router(["api.auth", "src.api.auth"])
 followups_router    = _try_import_router(["api.followups", "src.api.followups"])
 reports_router      = _try_import_router(["api.reports", "src.api.reports"])
 import_excel_router = _try_import_router(["api.import_excel", "src.api.import_excel"])
->>>>>>> fusion-kaleth
 
 # ---------- Lifespan ----------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Iniciando Nutritional Assessment API...")
-<<<<<<< HEAD
-    Base.metadata.create_all(bind=engine)
-=======
     # Crear tablas si hay DB
     if _engine and _Base:
         try:
@@ -163,7 +106,6 @@ async def lifespan(app: FastAPI):
             logger.info("Tablas creadas OK")
         except Exception as e:
             logger.error(f"Error creando tablas: {e}")
->>>>>>> fusion-kaleth
     yield
     logger.info("Apagando Nutritional Assessment API...")
 
@@ -177,20 +119,11 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-<<<<<<< HEAD
-# Seguridad de host (usar '*' en dev)
-=======
 # ---------- Middleware ----------
->>>>>>> fusion-kaleth
 app.add_middleware(
     TrustedHostMiddleware,
     allowed_hosts=ALLOWED_HOSTS if ALLOWED_HOSTS else ["*"]
 )
-<<<<<<< HEAD
-
-# CORS
-=======
->>>>>>> fusion-kaleth
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS if ALLOWED_ORIGINS else ["*"],
@@ -199,16 +132,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-<<<<<<< HEAD
-# ---------- Health ----------
-@app.get("/health")
-async def health_check():
-    return {
-        "status": "healthy",
-        "service": "nutritional-assessment-api",
-        "version": "1.0.0",
-        "environment": ENV,
-=======
 # ---------- Endpoints base ----------
 @app.get("/health")
 async def health_check():
@@ -250,22 +173,11 @@ async def root():
         "version": "1.0.0",
         "docs": "/docs" if ENV == "development" else "Documentation disabled in production",
         "health": "/health",
->>>>>>> fusion-kaleth
     }
 
 # ---------- Registro de routers ----------
 if children_router:
     app.include_router(children_router, prefix="/api/children", tags=["children"])
-<<<<<<< HEAD
-if followups_router:
-    app.include_router(followups_router, prefix="/api/followups", tags=["followups"])
-if reports_router:
-    app.include_router(reports_router, prefix="/api/reports")
-if import_excel_router:
-    app.include_router(import_excel_router, prefix="/api/import")
-if auth_router:
-    app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
-=======
 if auth_router:
     app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 if followups_router:
@@ -274,7 +186,6 @@ if reports_router:
     app.include_router(reports_router, prefix="/api/reports", tags=["reports"])
 if import_excel_router:
     app.include_router(import_excel_router, prefix="/api/import", tags=["import"])
->>>>>>> fusion-kaleth
 
 # ---------- Manejadores globales ----------
 @app.exception_handler(Exception)
@@ -282,10 +193,6 @@ async def global_exception_handler(request, exc):
     logger.error(f"Unhandled exception: {exc}", exc_info=True)
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
-<<<<<<< HEAD
-=======
-
->>>>>>> fusion-kaleth
 @app.exception_handler(404)
 async def not_found_handler(request, exc):
     return JSONResponse(

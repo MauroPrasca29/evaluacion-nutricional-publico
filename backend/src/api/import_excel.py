@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # backend/src/api/import_excel.py
 # Servicio de importación de Excel con "vector store" ligero (TF-IDF).
 # Rutas:
@@ -346,33 +345,3 @@ async def search_in_import(
         raise HTTPException(status_code=404, detail="No existe vector store para ese import_id")
     results = store.search(q, top_k=top_k)
     return [SearchResult(row_index=i, score=s, payload=store.payloads[i]) for i, s in results]
-=======
-from fastapi import APIRouter, UploadFile, File
-from pydantic import BaseModel
-
-router = APIRouter(tags=["import"])
-
-class ImportStatusResponse(BaseModel):
-    import_id: str
-    status: str
-
-class MessageResponse(BaseModel):
-    message: str
-
-@router.post("/excel", response_model=MessageResponse)
-async def upload_excel(file: UploadFile = File(...)):
-    _ = await file.read()
-    return MessageResponse(message=f"File {file.filename} processed successfully")
-
-@router.get("/template", response_model=MessageResponse)
-def download_template():
-    return MessageResponse(message="Template download endpoint")
-
-@router.get("/status/{import_id}", response_model=ImportStatusResponse)
-def import_status(import_id: str):
-    return ImportStatusResponse(import_id=import_id, status="completed")
-
-@router.get("/ping")
-def ping():
-    return {"ok": True, "service": "import"}
->>>>>>> fusion-kaleth

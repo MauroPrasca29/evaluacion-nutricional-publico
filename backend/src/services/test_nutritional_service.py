@@ -1,74 +1,82 @@
 from nutrition_service import NutritionService
 from tabulate import tabulate
 
-age_days = 365      # 1 año
-weight = 10.7       # kg 
-height = 74.0       # cm 
-gender = "male"
-head_circumference = 44.0  # cm 
-triceps_skinfold = 7.0     # mm 
-subscapular_skinfold = 5.0 # mm 
+def test_nutricional_completo():
+    # Datos del infante (todos los requeridos por la API)
+    name = "Saray"
+    age_days = 3650         # ≈ 2 años
+    weight = 12.8            # kg
+    height = 87.0            # cm
+    gender = "female"
+    head_circumference = 49.0
+    triceps_skinfold = 9.5
+    subscapular_skinfold = 7.5
+    activity_level = "vigorous"
+    feeding_mode = "breast"  # Nuevo campo requerido
+    nutricionist_observation = "El niño se encuentra bien"
 
-assessment = NutritionService.assess_nutritional_status(
-    age_days, weight, height, gender,
-    head_circumference, triceps_skinfold, subscapular_skinfold
-)
+    # 1. Evaluación antropométrica
+    assessment = NutritionService.assess_nutritional_status(
+        age_days, weight, height, gender,
+        head_circumference, triceps_skinfold, subscapular_skinfold
+    )
 
-# Obtener rangos de referencia desde las tablas OMS
-def get_reference_range(variable, gender, age_days):
-    table = NutritionService.get_table(variable, gender)
-    row = table[table["Day"] == age_days].iloc[0]
-    min_normal = row["SD2neg"]  # z-score -2
-    max_normal = row["SD2"]     # z-score +2
-    return min_normal, max_normal
+    # 2. Requerimientos energéticos para cada modo de alimentación
+    print("\nREQUERIMIENTOS ENERGÉTICOS")
+    print("-" * 50)
+    feeding_modes = ["breast", "formula", "mixed"]
+    energia_tabla = []
+    energia_dict = {}
+    for mode in feeding_modes:
+        req = NutritionService.get_energy_requirement(
+            age_days=age_days,
+            weight=weight,
+            gender=gender,
+            feeding_mode=mode,
+            activity_level=activity_level
+        )
+        energia_tabla.append([
+            mode,
+            req['kcal_per_kg_str'],
+            req['kcal_per_day_str'],
+            req.get('row_label', 'No especificado'),
+            req.get('used_column', 'No especificada')
+        ])
+        energia_dict[mode] = req
 
-ranges = {
-    "BMI": get_reference_range("bmi", gender, age_days),
-    "Peso": get_reference_range("weight", gender, age_days),
-    "Talla": get_reference_range("height", gender, age_days),
-    "Circunferencia craneal": get_reference_range("head_circumference", gender, age_days),
-    "Pliegue triceps": get_reference_range("triceps_skinfold", gender, age_days),
-    "Pliegue subescapular": get_reference_range("subscapular_skinfold", gender, age_days),
-}
+    print(tabulate(
+        energia_tabla,
+        headers=["Modo alimentación", "Kcal/kg/día", "Kcal/día", "Rango edad", "Columna usada"],
+        tablefmt="grid"
+    ))
 
-# Mostrar tabla de resultados con rangos
-table = [
-    ["BMI", assessment["bmi"], assessment["nutritional_status"]["imc"], "-2 a 2"],
-    ["Peso z-score", assessment["weight_for_age_zscore"], assessment["nutritional_status"]["peso"], "-2 a 2"],
-    ["Talla z-score", assessment["height_for_age_zscore"], assessment["nutritional_status"]["talla"], "-2 a 2"],
-    ["IMC z-score", assessment["bmi_for_age_zscore"], assessment["nutritional_status"]["imc"], "-2 a 2"],
-    ["Circunferencia craneal z-score", assessment["head_circumference_zscore"], assessment["nutritional_status"]["circunferencia_craneal"], "-2 a 2"],
-    ["Pliegue triceps z-score", assessment["triceps_skinfold_zscore"], assessment["nutritional_status"]["pliegue_triceps"], "-2 a 2"],
-    ["Pliegue subescapular z-score", assessment["subscapular_skinfold_zscore"], assessment["nutritional_status"]["pliegue_subescapular"], "-2 a 2"],
-    ["Riesgo", assessment["risk_level"], "", ""],
-]
+    # 3. Generar recomendaciones
+    recommendations = NutritionService.generate_recommendations(assessment)
 
-print(tabulate(table, headers=["Indicador", "Valor", "Estado", "Rango normal (z-score)"], tablefmt="grid"))
+    # 4. Datos del infante para el reporte (incluye feeding_mode y name)
+    child_data = {
+        "name": name,
+        "weight": weight,
+        "height": height,
+        "head_circumference": head_circumference,
+        "triceps_skinfold": triceps_skinfold,
+        "subscapular_skinfold": subscapular_skinfold,
+        "activity_level": activity_level,
+        "feeding_mode": feeding_mode,
+        "nutricionist_observation": nutricionist_observation
+    }
 
-# Observación sobre valores en los límites
-limite_superior = 1.8
-limite_inferior = -1.8
-observaciones = []
-for nombre, z in [
-    ("Peso", assessment["weight_for_age_zscore"]),
-    ("Talla", assessment["height_for_age_zscore"]),
-    ("IMC", assessment["bmi_for_age_zscore"]),
-    ("Circunferencia craneal", assessment["head_circumference_zscore"]),
-    ("Pliegue triceps", assessment["triceps_skinfold_zscore"]),
-    ("Pliegue subescapular", assessment["subscapular_skinfold_zscore"])
-]:
-    if z is not None and (limite_inferior <= z < -1.5):
-        observaciones.append(f"{nombre}: cerca del límite inferior, considerar subir el valor.")
-    elif z is not None and (1.5 < z <= limite_superior):
-        observaciones.append(f"{nombre}: cerca del límite superior, considerar bajar el valor.")
+    # 5. Generar reporte PDF
+    NutritionService.export_report_pdf(
+        "reporte_nutricional.pdf",
+        assessment,
+        age_days,
+        gender,
+        recommendations,
+        child_data
+    )
+    print("\nReporte PDF generado: reporte_nutricional.pdf")
 
-if not observaciones:
-    observacion_general = "Todo está bien, todos los valores están dentro de los límites normales."
-else:
-    observacion_general = "Todo está bien, pero los siguientes valores están cerca de los límites y deben ser monitoreados:\n" + "\n".join(observaciones)
-
-print("\nObservación:")
-print(observacion_general)
-# Generar recomendaciones
-##recommendations = NutritionService.generate_recommendations(assessment)
-##print("Recomendaciones:", recommendations)
+if __name__ == "__main__":
+    print("Ejecutando test nutricional completo...")
+    test_nutricional_completo()

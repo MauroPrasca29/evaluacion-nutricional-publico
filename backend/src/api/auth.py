@@ -22,9 +22,9 @@ from sqlalchemy.orm import Session
 from passlib.context import CryptContext
 from jose import JWTError, jwt
 
-from db.session import get_db
-from db.models import Usuario
-from db.schemas import UsuarioCreate, UsuarioResponse
+from src.db.session import get_db
+from src.db.models import Usuario
+from src.db.schemas import UsuarioCreate, UsuarioResponse
 
 # ------------------------------------------------------------
 # Configuración
