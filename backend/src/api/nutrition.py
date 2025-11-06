@@ -3,6 +3,7 @@ from fastapi.responses import FileResponse
 from src.services.nutrition_service import NutritionService
 import tempfile
 import os
+import datetime
 
 router = APIRouter(prefix="/nutrition", tags=["nutrition"])
 
@@ -46,4 +47,7 @@ def get_nutritional_report(
             child_data
         )
         tmp_path = tmp.name
-    return FileResponse(tmp_path, media_type="application/pdf", filename="reporte_nutricional.pdf")
+    fecha = datetime.datetime.now().strftime("%Y-%m-%d")
+    nombre_archivo = f"{name.replace(' ', '_')}_reporte_nutricional_{fecha}.pdf"
+
+    return FileResponse(tmp_path, media_type="application/pdf", filename=nombre_archivo)
