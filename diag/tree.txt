@@ -1,0 +1,190 @@
+.
+├── .editorconfig
+├── .env
+├── .env.example
+├── .gitignore
+├── .gitmodules
+├── .next
+│   ├── app-build-manifest.json
+│   ├── build-manifest.json
+│   ├── cache
+│   │   ├── .tsbuildinfo
+│   │   ├── config.json
+│   │   ├── swc
+│   │   └── webpack
+│   ├── diagnostics
+│   │   ├── build-diagnostics.json
+│   │   └── framework.json
+│   ├── package.json
+│   ├── react-loadable-manifest.json
+│   ├── server
+│   │   ├── app
+│   │   ├── app-paths-manifest.json
+│   │   ├── chunks
+│   │   ├── interception-route-rewrite-manifest.js
+│   │   ├── middleware-build-manifest.js
+│   │   ├── middleware-manifest.json
+│   │   ├── middleware-react-loadable-manifest.js
+│   │   ├── next-font-manifest.js
+│   │   ├── next-font-manifest.json
+│   │   ├── pages
+│   │   ├── pages-manifest.json
+│   │   ├── server-reference-manifest.js
+│   │   ├── server-reference-manifest.json
+│   │   └── webpack-runtime.js
+│   ├── static
+│   │   ├── chunks
+│   │   ├── css
+│   │   └── pMSZmbxos2NNXcb5b-rIW
+│   ├── trace
+│   └── types
+│       ├── app
+│       ├── cache-life.d.ts
+│       └── package.json
+├── .pre-commit-config.yaml
+├── Dockerfile.backend
+├── Dockerfile.frontend
+├── LICENSE
+├── README.md
+├── app
+│   ├── globals.css
+│   ├── layout.tsx
+│   ├── loading.tsx
+│   └── page.tsx
+├── backend
+│   ├── .env.example
+│   ├── Dockerfile
+│   ├── data
+│   │   ├── food_composition
+│   │   ├── imports
+│   │   └── who_tables
+│   ├── db_sistema_nutricion
+│   ├── hc_curve.png
+│   ├── imc_curve.png
+│   ├── logs
+│   ├── main.py
+│   ├── peso_curve.png
+│   ├── requirements-dev.txt
+│   ├── requirements.txt
+│   ├── src
+│   │   ├── api
+│   │   ├── core
+│   │   ├── db
+│   │   ├── main.py
+│   │   ├── models
+│   │   ├── services
+│   │   └── tests
+│   ├── ssf_curve.png
+│   ├── talla_curve.png
+│   ├── tsf_curve.png
+│   └── uploads
+├── components
+│   ├── AdvancedStatistics.tsx
+│   ├── AppHeader.tsx
+│   ├── AppSidebar.tsx
+│   ├── ChildProfile.tsx
+│   ├── ChildrenManagement.tsx
+│   ├── Dashboard.tsx
+│   ├── FileUpload.tsx
+│   ├── FollowUpResults.tsx
+│   ├── GlobalBMIChart.tsx
+│   ├── GrowthChart.tsx
+│   ├── ImportData.tsx
+│   ├── NewChildForm.tsx
+│   ├── NewFollowUpForm.tsx
+│   ├── NotificationPanel.tsx
+│   ├── Reports.tsx
+│   ├── UserProfile.tsx
+│   ├── theme-provider.tsx
+│   └── ui
+│       ├── accordion.tsx
+│       ├── avatar.tsx
+│       ├── badge.tsx
+│       ├── button.tsx
+│       ├── card.tsx
+│       ├── checkbox.tsx
+│       ├── dropdown-menu.tsx
+│       ├── input.tsx
+│       ├── label.tsx
+│       ├── progress.tsx
+│       ├── scroll-area.tsx
+│       ├── select.tsx
+│       ├── switch.tsx
+│       ├── tabs.tsx
+│       └── textarea.tsx
+├── components.json
+├── data
+│   ├── mockData.ts
+│   └── whoStandards.ts
+├── database
+│   ├── .env.example
+│   ├── migrations
+│   │   └── .gitkeep
+│   ├── schema.sql
+│   └── seeds.sql
+├── diag
+│   └── tree.txt
+├── docker-compose.yml
+├── hc_curve.png
+├── imc_curve.png
+├── infra
+│   ├── Dockerfile.backend
+│   ├── Dockerfile.frontend
+│   ├── docker-compose.yml
+│   ├── imc_curve.png
+│   ├── k8s
+│   │   ├── .gitkeep
+│   │   ├── deployment-backend.yaml
+│   │   ├── deployment-db.yaml
+│   │   ├── deployment-frontend.yaml
+│   │   ├── service-backend.yaml
+│   │   ├── service-db.yaml
+│   │   └── service-frontend.yaml
+│   ├── nginx
+│   │   └── .env.example
+│   ├── nginx.conf
+│   ├── peso_curve.png
+│   ├── reporte_nutricional.pdf
+│   └── talla_curve.png
+├── k8s
+│   ├── .gitkeep
+│   ├── deployment-backend.yaml
+│   ├── deployment-db.yaml
+│   ├── deployment-frontend.yaml
+│   ├── service-backend.yaml
+│   ├── service-db.yaml
+│   └── service-frontend.yaml
+├── lib
+│   └── utils.ts
+├── next-env.d.ts
+├── next.config.js
+├── next.config.mjs
+├── nginx.conf
+├── package-lock.json
+├── package.json
+├── peso_curve.png
+├── pnpm-lock.yaml
+├── postcss.config.mjs
+├── public
+│   ├── placeholder-logo.png
+│   ├── placeholder-logo.svg
+│   ├── placeholder-user.jpg
+│   ├── placeholder.jpg
+│   └── placeholder.svg
+├── reporte_nutricional.pdf
+├── scripts
+│   ├── checklist.sh
+│   └── smoke.sh
+├── ssf_curve.png
+├── styles
+│   └── globals.css
+├── tailwind.config.ts
+├── talla_curve.png
+├── tsconfig.json
+├── tsf_curve.png
+├── types
+│   └── index.ts
+└── utils
+    └── theme.ts
+
+48 directories, 140 files

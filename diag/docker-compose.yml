@@ -1,0 +1,34 @@
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: nutricional_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    # Si alguien usa Railway (USE_RAILWAY=true), puede ignorar este servicio (no es obligatorio)
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: backend_nutricion
+    env_file:
+      - .env
+    environment:
+      # Híbrido: si hay DATABASE_PUBLIC_URL, úsala; si no, cae a DATABASE_URL local
+      DATABASE_URL: ${DATABASE_PUBLIC_URL:-${DATABASE_URL}}
+    depends_on:
+      - db
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    command: >
+      sh -c "uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
+
+volumes:
+  db_data:
