@@ -1,23 +1,35 @@
 from typing import List, Optional, Dict, Any
+
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
+# OJO: aquí NO usamos /api/children, ese prefijo se agrega en main.py
 router = APIRouter(tags=["children"])
+
 
 # ====== Schemas ======
 class ChildCreate(BaseModel):
     nombre: str = Field(..., min_length=1, examples=["Ana María Pérez Rojas"])
-    fecha_nacimiento: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$", examples=["2021-05-10"])
+    fecha_nacimiento: str = Field(
+        ...,
+        pattern=r"^\d{4}-\d{2}-\d{2}$",
+        examples=["2021-05-10"],
+    )
     genero: str = Field(..., min_length=1, examples=["F", "M"])
     sede_id: int = Field(..., ge=1, examples=[1])
     acudiente_id: Optional[int] = Field(None, ge=1)
 
+
 class ChildUpdate(BaseModel):
     nombre: Optional[str] = Field(None, min_length=1)
-    fecha_nacimiento: Optional[str] = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    fecha_nacimiento: Optional[str] = Field(
+        None,
+        pattern=r"^\d{4}-\d{2}-\d{2}$",
+    )
     genero: Optional[str] = None
     sede_id: Optional[int] = Field(None, ge=1)
     acudiente_id: Optional[int] = Field(None, ge=1)
+
 
 class ChildOut(BaseModel):
     id: int
@@ -27,24 +39,29 @@ class ChildOut(BaseModel):
     sede_id: int
     acudiente_id: Optional[int] = None
 
+
 # ====== Memoria temporal (placeholder) ======
 _DB: Dict[int, Dict[str, Any]] = {}
 _SEQ = 0
+
 
 def _next_id() -> int:
     global _SEQ
     _SEQ += 1
     return _SEQ
 
+
 # ====== Helpers ======
 def _sanitize_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     cols = {"nombre", "fecha_nacimiento", "genero", "sede_id", "acudiente_id"}
     return {k: v for k, v in payload.items() if k in cols}
 
+
 # ====== Endpoints ======
 @router.get("/ping")
 def ping():
     return {"ok": True, "service": "children"}
+
 
 @router.get("/", response_model=List[ChildOut])
 def list_children(
@@ -59,12 +76,14 @@ def list_children(
         for cid, data in slice_
     ]
 
+
 @router.post("/", response_model=ChildOut, status_code=201)
 def create_child(payload: ChildCreate):
     data = _sanitize_payload(payload.model_dump())
     new_id = _next_id()
     _DB[new_id] = data
     return ChildOut(id=new_id, **data)  # type: ignore[arg-type]
+
 
 @router.get("/{child_id}", response_model=ChildOut)
 def get_child(child_id: int):
@@ -73,18 +92,22 @@ def get_child(child_id: int):
         raise HTTPException(status_code=404, detail="Child not found")
     return ChildOut(id=child_id, **data)  # type: ignore[arg-type]
 
+
 @router.put("/{child_id}", response_model=ChildOut)
 def update_child(child_id: int, payload: ChildUpdate):
     if child_id not in _DB:
         raise HTTPException(status_code=404, detail="Child not found")
+
     cur = _DB[child_id]
     updates = _sanitize_payload(payload.model_dump(exclude_unset=True))
     cur.update({k: v for k, v in updates.items() if v is not None})
     return ChildOut(id=child_id, **cur)  # type: ignore[arg-type]
+
 
 @router.delete("/{child_id}", status_code=204)
 def delete_child(child_id: int):
     if child_id not in _DB:
         raise HTTPException(status_code=404, detail="Child not found")
     del _DB[child_id]
-    # 204 No Content -> FastAPI no devolverá cuerpo
+    # 204 No Content → FastAPI no devuelve cuerpo
+    return None
