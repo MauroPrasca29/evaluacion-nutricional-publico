@@ -133,26 +133,31 @@ app.add_middleware(
 async def health_check():
     """
     Verifica el estado general y la conexión con la base de datos.
+    No rompe el health si la DB falla; reporta 'degraded'.
     """
-    try:
-        db_ok = False
-        if _SessionLocal:
+    db_ok = False
+    db_error: str | None = None
+
+    if _SessionLocal:
+        try:
             db = _SessionLocal()
             db.execute(text("SELECT 1"))
             db.close()
             db_ok = True
+        except Exception as e:
+            db_error = str(e)
+            logger.error(f"Health check failed: {e}")
 
-        return {
-            "status": "healthy",
-            "service": "nutritional-assessment-api",
-            "version": "1.0.0",
-            "environment": ENV,
-            "db": db_ok,
-        }
+    status = "healthy" if db_ok else "degraded"
 
-    except Exception as e:
-        logger.error(f"Health check failed: {e}")
-        raise HTTPException(status_code=503, detail="Service unavailable")
+    return {
+        "status": status,
+        "service": "nutritional-assessment-api",
+        "version": "1.0.0",
+        "environment": ENV,
+        "db": db_ok,
+        "db_error": db_error,
+    }
 
 
 @app.get("/healthz")
