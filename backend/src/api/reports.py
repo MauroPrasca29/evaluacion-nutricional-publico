@@ -1,198 +1,149 @@
-# backend/src/api/reports.py
-# Endpoints de reportes a partir de un import_id existente (cargado con /import/excel)
+from typing import Any, Dict
 
-from __future__ import annotations
+from fastapi import APIRouter, HTTPException
 
-import io
-import math
-from datetime import date, datetime
-from typing import Dict, Optional
+from . import children as children_module
+from . import nutrition as nutrition_module
 
-import numpy as np
-import pandas as pd
-from fastapi import APIRouter, HTTPException, Path
-from fastapi.responses import JSONResponse, StreamingResponse
-
-# Reutilizamos el almacenamiento del import
-from src.api.import_excel import VectorStore
-
-router = APIRouter(prefix="/reports", tags=["Reports"])
+# Este router se monta en main.py con prefix="/api/reports"
+# Aquí usamos prefix="/reports" para que las rutas finales queden:
+#   /api/reports/reports/...
+router = APIRouter(prefix="/reports", tags=["reports"])
 
 
-# ----------------- Utilidades -----------------
-def _to_str(v) -> str:
-    return "" if v is None or (isinstance(v, float) and math.isnan(v)) else str(v).strip()
-
-def _parse_float(v) -> Optional[float]:
-    if v is None:
-        return None
-    try:
-        s = str(v).replace(",", ".").strip()
-        if s == "":
-            return None
-        return float(s)
-    except Exception:
-        return None
-
-def _parse_date(v) -> Optional[date]:
-    if v is None:
-        return None
-    if isinstance(v, date):
-        return v
-    s = str(v).strip()
-    if not s:
-        return None
-    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y"):
-        try:
-            return datetime.strptime(s, fmt).date()
-        except Exception:
-            continue
-    try:
-        return pd.to_datetime(v).date()
-    except Exception:
-        return None
-
-def _age_years(born: Optional[date]) -> Optional[float]:
-    if not born:
-        return None
-    today = date.today()
-    try:
-        years = (today - born).days / 365.25
-        return round(years, 2)
-    except Exception:
-        return None
-
-def _bmi(weight_kg: Optional[float], height_cm: Optional[float]) -> Optional[float]:
-    if not weight_kg or not height_cm:
-        return None
-    try:
-        h = height_cm / 100.0
-        if h <= 0:
-            return None
-        return round(weight_kg / (h * h), 2)
-    except Exception:
-        return None
-
-def _bmi_category(bmi: Optional[float]) -> str:
-    if bmi is None:
-        return "unknown"
-    if bmi < 18.5:
-        return "underweight"
-    if bmi < 25:
-        return "normal"
-    if bmi < 30:
-        return "overweight"
-    return "obesity"
-
-def _load_dataframe(import_id: str) -> pd.DataFrame:
-    store = VectorStore(import_id)
-    if not store.load():
-        raise HTTPException(status_code=404, detail="No existe vector store para ese import_id")
-    df = pd.DataFrame(store.payloads).copy()
-
-    expected = [
-        "document_type", "document_number", "first_name", "last_name",
-        "sex", "birth_date", "height_cm", "weight_kg", "notes"
-    ]
-    for c in expected:
-        if c not in df.columns:
-            df[c] = np.nan
-
-    df["sex"] = df["sex"].apply(lambda x: _to_str(x).upper())
-    df["birth_date_parsed"] = df["birth_date"].apply(_parse_date)
-    df["age_years"] = df["birth_date_parsed"].apply(_age_years)
-
-    df["height_cm_num"] = df["height_cm"].apply(_parse_float)
-    df["weight_kg_num"] = df["weight_kg"].apply(_parse_float)
-    df["bmi"] = df.apply(lambda r: _bmi(r["weight_kg_num"], r["height_cm_num"]), axis=1)
-    df["bmi_category"] = df["bmi"].apply(_bmi_category)
-
-    return df
-
-
-# ----------------- Endpoints -----------------
-@router.get("/", summary="Listado de endpoints de reportes")
-async def reports_index():
+@router.get("/")
+def list_available_reports() -> Dict[str, Any]:
+    """
+    Devuelve un listado de endpoints de reporte disponibles.
+    Útil para que el frontend descubra qué puede consultar.
+    """
     return {
         "endpoints": [
-            "GET /api/reports/import/{import_id}/summary",
-            "GET /api/reports/import/{import_id}/export",
+            "GET /api/reports/reports/",
+            "GET /api/reports/reports/import/{import_id}/summary",
+            "GET /api/reports/reports/import/{import_id}/export",
+            "GET /api/reports/reports/child/{child_id}/full",
         ]
     }
 
 
-@router.get(
-    "/import/{import_id}/summary",
-    summary="Resumen del dataset importado (conteos, promedios, BMI)"
-)
-async def import_summary(
-    import_id: str = Path(..., description="ID devuelto por /import/excel")
-) -> JSONResponse:
-    df = _load_dataframe(import_id)
+# --- Placeholders de los reportes por importación (para no romper el Front) ---
 
-    total_rows = int(len(df))
-    sex_counts = df["sex"].value_counts(dropna=False).to_dict()
+@router.get("/import/{import_id}/summary")
+def get_import_summary(import_id: int) -> Dict[str, Any]:
+    """
+    Placeholder de reporte-resumen por importación.
+    En la rama de diagnóstico no usamos DB real, así que devolvemos
+    un esquema simple que el frontend pueda consumir sin romperse.
+    """
+    if import_id <= 0:
+        raise HTTPException(status_code=400, detail="Invalid import_id")
 
-    age_mean = float(np.nanmean(df["age_years"])) if df["age_years"].notna().any() else None
-    height_mean = float(np.nanmean(df["height_cm_num"])) if df["height_cm_num"].notna().any() else None
-    weight_mean = float(np.nanmean(df["weight_kg_num"])) if df["weight_kg_num"].notna().any() else None
-    bmi_mean = float(np.nanmean(df["bmi"])) if df["bmi"].notna().any() else None
-
-    bmi_categories = df["bmi_category"].value_counts(dropna=False).to_dict()
-
-    preview_cols = [
-        "document_type", "document_number", "first_name", "last_name",
-        "sex", "birth_date", "height_cm", "weight_kg", "bmi", "bmi_category"
-    ]
-    preview_cols = [c for c in preview_cols if c in df.columns or c in ["bmi", "bmi_category"]]
-    preview = df[preview_cols].head(10).fillna("").to_dict(orient="records")
-
-    return JSONResponse(
-        content={
-            "import_id": import_id,
-            "total_rows": total_rows,
-            "sex_counts": sex_counts,
-            "means": {
-                "age_years": age_mean,
-                "height_cm": height_mean,
-                "weight_kg": weight_mean,
-                "bmi": bmi_mean,
-            },
-            "bmi_categories": bmi_categories,
-            "preview_first_10": preview,
-        }
-    )
+    return {
+        "import_id": import_id,
+        "status": "not_implemented_in_debug_mode",
+        "message": (
+            "El resumen por importación no está implementado en esta rama "
+            "de diagnóstico sin base de datos."
+        ),
+    }
 
 
-@router.get(
-    "/import/{import_id}/export",
-    summary="Exportar Excel con cálculos (edad, BMI)"
-)
-async def export_enriched_excel(
-    import_id: str = Path(..., description="ID devuelto por /import/excel")
-):
-    df = _load_dataframe(import_id)
+@router.get("/import/{import_id}/export")
+def export_import_report(import_id: int) -> Dict[str, Any]:
+    """
+    Placeholder de exportación de reporte por importación.
+    En la rama de diagnóstico solo devolvemos un objeto JSON simbólico.
+    """
+    if import_id <= 0:
+        raise HTTPException(status_code=400, detail="Invalid import_id")
 
-    out_cols = [
-        "document_type", "document_number", "first_name", "last_name",
-        "sex", "birth_date", "height_cm", "weight_kg",
-        "age_years", "bmi", "bmi_category", "notes"
-    ]
-    for c in out_cols:
-        if c not in df.columns:
-            df[c] = ""
+    return {
+        "import_id": import_id,
+        "status": "not_implemented_in_debug_mode",
+        "message": (
+            "La exportación de reportes por importación no está implementada "
+            "en esta rama de diagnóstico sin base de datos."
+        ),
+    }
 
-    export_df = df[out_cols].copy()
 
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        export_df.to_excel(writer, index=False, sheet_name="reporte")
-    output.seek(0)
+# ---------- Helpers ----------
 
-    filename = f"reporte_{import_id}.xlsx"
-    headers = {"Content-Disposition": f'attachment; filename=\"{filename}\"'}
-    return StreamingResponse(
-        output,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers=headers,
-    )
+def _deep_convert(obj: Any) -> Any:
+    """
+    Convierte recursivamente modelos Pydantic (v1 o v2) a dict,
+    listas y dicts anidados también. Cualquier otra cosa la deja igual.
+    """
+    # Pydantic v2
+    if hasattr(obj, "model_dump"):
+        return obj.model_dump()
+    # Pydantic v1
+    if hasattr(obj, "dict"):
+        return obj.dict()
+    # dict anidado
+    if isinstance(obj, dict):
+        return {k: _deep_convert(v) for k, v in obj.items()}
+    # lista/tupla anidada
+    if isinstance(obj, (list, tuple)):
+        return [_deep_convert(v) for v in obj]
+    return obj
+
+
+# --- Reporte completo por niño (datos, clínica, nutrición) ---
+
+@router.get("/child/{child_id}/full")
+def get_child_full_report(child_id: int) -> Dict[str, Any]:
+    """
+    Reporte integral de un niño:
+    - Datos básicos (children)
+    - Resumen clínico (followups, vía children)
+    - Plan nutricional básico (nutrition)
+    """
+
+    # 1) Resumen combinado de datos + clínica
+    try:
+        child_summary_raw = children_module.get_child_full_summary(child_id)
+    except HTTPException as e:
+        # Propagamos el 404 si el niño no existe
+        if e.status_code == 404:
+            raise
+        # Otros errores inesperados se devuelven como 500
+        raise HTTPException(status_code=500, detail="Error fetching child summary")
+
+    # Aseguramos que TODO sea JSON-safe
+    child_summary = _deep_convert(child_summary_raw)
+
+    # 2) Plan nutricional
+    try:
+        nutrition_plan_raw = nutrition_module.get_child_plan(child_id)
+    except HTTPException as e:
+        # Si falla porque no hay followups o algo similar, devolvemos un aviso
+        if e.status_code == 404:
+            nutrition_plan = {
+                "child_id": child_id,
+                "riesgos": {},
+                "objetivos": [],
+                "recomendaciones": {},
+                "warning": "No se pudo generar plan nutricional (posible falta de datos clínicos).",
+            }
+        else:
+            raise HTTPException(status_code=500, detail="Error generating nutrition plan")
+    else:
+        nutrition_plan = _deep_convert(nutrition_plan_raw)
+
+    # 3) Extra: sacamos algunos flags clínicos directos
+    followup_summary = None
+    clinical_flags = None
+
+    if isinstance(child_summary, dict):
+        followup_summary = child_summary.get("followup_summary")
+        if isinstance(followup_summary, dict):
+            clinical_flags = followup_summary.get("clinical_flags")
+
+    return {
+        "child": child_summary.get("child") if isinstance(child_summary, dict) else None,
+        "clinical_summary": followup_summary,
+        "clinical_flags": clinical_flags,
+        "nutrition_plan": nutrition_plan,
+    }
