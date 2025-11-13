@@ -3,6 +3,9 @@ from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
+# Importamos followups para reutilizar el summary clínico
+from . import followups as followups_module
+
 # OJO: aquí NO usamos /api/children, ese prefijo se agrega en main.py
 router = APIRouter(tags=["children"])
 
@@ -57,7 +60,7 @@ def _sanitize_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     return {k: v for k, v in payload.items() if k in cols}
 
 
-# ====== Endpoints ======
+# ====== Endpoints básicos ======
 @router.get("/ping")
 def ping():
     return {"ok": True, "service": "children"}
@@ -111,3 +114,33 @@ def delete_child(child_id: int):
     del _DB[child_id]
     # 204 No Content → FastAPI no devuelve cuerpo
     return None
+
+
+# --- Resumen combinado de niño + último seguimiento ---
+@router.get("/{child_id}/summary")
+def get_child_full_summary(child_id: int):
+    """
+    Devuelve:
+    - datos básicos del niño
+    - resumen clínico basado en el último followup (si existe)
+    """
+    data = _DB.get(child_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="Child not found")
+
+    child = ChildOut(id=child_id, **data)  # type: ignore[arg-type]
+
+    # Intentamos obtener el summary de followups; si no hay, devolvemos followup_summary = None
+    followup_summary = None
+    try:
+        followup_summary = followups_module.get_child_summary(child_id)
+    except HTTPException as e:
+        # Si es 404 => no tiene controles aún → lo tratamos como “sin historial”
+        if e.status_code != 404:
+            # Si es otro error, lo propagamos
+            raise
+
+    return {
+        "child": child.model_dump(),
+        "followup_summary": followup_summary,
+    }

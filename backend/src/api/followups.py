@@ -276,3 +276,86 @@ def get_child_latest_followup(child_id: int):
 
     fid, data = candidatos[0]
     return _to_out_model(fid, data)
+
+# --- Resumen del estado de un niño (último control) ---
+
+@router.get("/child/{child_id}/summary")
+def get_child_summary(child_id: int):
+    """
+    Devuelve un resumen clínico rápido del niño:
+    - último control
+    - conteo de controles e historial de fechas
+    - banderas de riesgo (anemia, desnutrición) y síntomas
+    """
+    # 1) Filtrar followups del niño
+    items = [
+        (fid, data)
+        for fid, data in _DB_FOLLOWUPS.items()
+        if data.get("child_id") == child_id
+    ]
+    if not items:
+        raise HTTPException(status_code=404, detail="No followups for this child")
+
+    # 2) Ordenar por fecha (YYYY-MM-DD) y luego por id, y quedarnos con el más reciente
+    items.sort(key=lambda kv: (kv[1].get("fecha") or "", kv[0]), reverse=True)
+    latest_id, latest_data = items[0]
+    latest_out = _to_out_model(latest_id, latest_data)
+
+    # 3) Historial
+    history_dates = [
+        d.get("fecha")
+        for _, d in items
+        if d.get("fecha")
+    ]
+    history_count = len(items)
+
+    # 4) Riesgo de anemia según clasificación
+    anemia = latest_out.clasificacion_anemia
+    if anemia in ("anemia_moderada", "anemia_severa"):
+        riesgo_anemia = "alto"
+    elif anemia == "anemia_leve":
+        riesgo_anemia = "moderado"
+    elif anemia == "normal":
+        riesgo_anemia = "bajo"
+    else:
+        riesgo_anemia = "desconocido"
+
+    # 5) Riesgo nutricional muy simplificado según IMC
+    imc = latest_out.imc
+    if imc is None:
+        riesgo_desnutricion = "desconocido"
+    elif imc < 14:
+        riesgo_desnutricion = "alto"
+    elif imc < 15.5:
+        riesgo_desnutricion = "moderado"
+    else:
+        riesgo_desnutricion = "bajo"
+
+    # 6) Síntomas del último control (con nombre)
+    symptom_ids = latest_out.sintomas
+    symptom_objs = []
+    for sid in symptom_ids:
+        s = _DB_SYMPTOMS.get(sid)
+        if s:
+            symptom_objs.append(
+                {
+                    "id": sid,
+                    "nombre": s.get("nombre"),
+                    "descripcion": s.get("descripcion"),
+                }
+            )
+
+    return {
+        "child_id": child_id,
+        "history_count": history_count,
+        "history_dates": history_dates,
+        "latest_followup": latest_out.model_dump(),
+        "clinical_flags": {
+            "clasificacion_anemia": anemia,
+            "riesgo_anemia": riesgo_anemia,
+            "imc": imc,
+            "riesgo_desnutricion": riesgo_desnutricion,
+            "tiene_sintomas": bool(symptom_ids),
+            "sintomas": symptom_objs,
+        },
+    }
