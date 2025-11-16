@@ -1,90 +1,237 @@
-from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, HTTPException, Query
+from typing import List, Optional
+from datetime import date
+from fastapi import APIRouter, HTTPException, Query, Depends, status
+from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
+
+from src.db.session import get_db
+from src.db.models import Infante
+from src.db.schemas import InfanteCreate, Infante as InfanteSchema
 
 router = APIRouter(tags=["children"])
 
-# ====== Schemas ======
+# ====== Schemas de Request/Response ======
 class ChildCreate(BaseModel):
     nombre: str = Field(..., min_length=1, examples=["Ana María Pérez Rojas"])
-    fecha_nacimiento: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$", examples=["2021-05-10"])
-    genero: str = Field(..., min_length=1, examples=["F", "M"])
-    sede_id: int = Field(..., ge=1, examples=[1])
+    fecha_nacimiento: date = Field(..., examples=["2021-05-10"])
+    genero: str = Field(..., pattern=r"^[MF]$", examples=["F", "M"])
+    sede_id: Optional[int] = Field(None, ge=1, examples=[1])
     acudiente_id: Optional[int] = Field(None, ge=1)
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "nombre": "Ana María Pérez Rojas",
+                "fecha_nacimiento": "2021-05-10",
+                "genero": "F",
+                "sede_id": 1,
+                "acudiente_id": 1
+            }
+        }
+
 
 class ChildUpdate(BaseModel):
     nombre: Optional[str] = Field(None, min_length=1)
-    fecha_nacimiento: Optional[str] = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
-    genero: Optional[str] = None
+    fecha_nacimiento: Optional[date] = None
+    genero: Optional[str] = Field(None, pattern=r"^[MF]$")
     sede_id: Optional[int] = Field(None, ge=1)
-    acudiente_id: Optional[int] = Field(None, ge=1)
-
-class ChildOut(BaseModel):
-    id: int
-    nombre: str
-    fecha_nacimiento: str
-    genero: str
-    sede_id: int
     acudiente_id: Optional[int] = None
 
-# ====== Memoria temporal (placeholder) ======
-_DB: Dict[int, Dict[str, Any]] = {}
-_SEQ = 0
 
-def _next_id() -> int:
-    global _SEQ
-    _SEQ += 1
-    return _SEQ
+class ChildOut(BaseModel):
+    id_infante: int
+    nombre: str
+    fecha_nacimiento: date
+    genero: str
+    sede_id: Optional[int] = None
+    acudiente_id: Optional[int] = None
 
-# ====== Helpers ======
-def _sanitize_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
-    cols = {"nombre", "fecha_nacimiento", "genero", "sede_id", "acudiente_id"}
-    return {k: v for k, v in payload.items() if k in cols}
+    class Config:
+        from_attributes = True
+
 
 # ====== Endpoints ======
 @router.get("/ping")
 def ping():
+    """Endpoint de health check para el servicio de children"""
     return {"ok": True, "service": "children"}
+
 
 @router.get("/", response_model=List[ChildOut])
 def list_children(
-    limit: int = Query(50, ge=1, le=500),
-    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=500, description="Número máximo de registros"),
+    offset: int = Query(0, ge=0, description="Número de registros a saltar"),
+    db: Session = Depends(get_db)
 ):
-    items = list(_DB.items())
-    items.sort(key=lambda kv: kv[0])
-    slice_ = items[offset : offset + limit]
-    return [
-        ChildOut(id=cid, **data)  # type: ignore[arg-type]
-        for cid, data in slice_
-    ]
+    """
+    Lista todos los infantes con paginación
+    """
+    children = db.query(Infante).offset(offset).limit(limit).all()
+    return children
 
-@router.post("/", response_model=ChildOut, status_code=201)
-def create_child(payload: ChildCreate):
-    data = _sanitize_payload(payload.model_dump())
-    new_id = _next_id()
-    _DB[new_id] = data
-    return ChildOut(id=new_id, **data)  # type: ignore[arg-type]
+
+@router.post("/", response_model=ChildOut, status_code=status.HTTP_201_CREATED)
+def create_child(
+    payload: ChildCreate,
+    db: Session = Depends(get_db)
+):
+    """
+    Crea un nuevo registro de infante
+    """
+    # Verificar que la sede existe si se proporciona
+    if payload.sede_id:
+        from src.db.models import Sede
+        sede = db.query(Sede).filter(Sede.id_sede == payload.sede_id).first()
+        if not sede:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Sede con id {payload.sede_id} no encontrada"
+            )
+    
+    # Verificar que el acudiente existe si se proporciona
+    if payload.acudiente_id:
+        from src.db.models import Acudiente
+        acudiente = db.query(Acudiente).filter(Acudiente.id_acudiente == payload.acudiente_id).first()
+        if not acudiente:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Acudiente con id {payload.acudiente_id} no encontrado"
+            )
+    
+    # Crear el nuevo infante
+    new_child = Infante(
+        nombre=payload.nombre,
+        fecha_nacimiento=payload.fecha_nacimiento,
+        genero=payload.genero,
+        sede_id=payload.sede_id,
+        acudiente_id=payload.acudiente_id
+    )
+    
+    db.add(new_child)
+    db.commit()
+    db.refresh(new_child)
+    
+    return new_child
+
 
 @router.get("/{child_id}", response_model=ChildOut)
-def get_child(child_id: int):
-    data = _DB.get(child_id)
-    if not data:
-        raise HTTPException(status_code=404, detail="Child not found")
-    return ChildOut(id=child_id, **data)  # type: ignore[arg-type]
+def get_child(
+    child_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Obtiene un infante específico por ID
+    """
+    child = db.query(Infante).filter(Infante.id_infante == child_id).first()
+    
+    if not child:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Infante con id {child_id} no encontrado"
+        )
+    
+    return child
+
 
 @router.put("/{child_id}", response_model=ChildOut)
-def update_child(child_id: int, payload: ChildUpdate):
-    if child_id not in _DB:
-        raise HTTPException(status_code=404, detail="Child not found")
-    cur = _DB[child_id]
-    updates = _sanitize_payload(payload.model_dump(exclude_unset=True))
-    cur.update({k: v for k, v in updates.items() if v is not None})
-    return ChildOut(id=child_id, **cur)  # type: ignore[arg-type]
+def update_child(
+    child_id: int,
+    payload: ChildUpdate,
+    db: Session = Depends(get_db)
+):
+    """
+    Actualiza un infante existente
+    """
+    child = db.query(Infante).filter(Infante.id_infante == child_id).first()
+    
+    if not child:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Infante con id {child_id} no encontrado"
+        )
+    
+    # Actualizar solo los campos proporcionados
+    update_data = payload.model_dump(exclude_unset=True)
+    
+    # Verificar relaciones si se actualizan
+    if "sede_id" in update_data and update_data["sede_id"]:
+        from src.db.models import Sede
+        sede = db.query(Sede).filter(Sede.id_sede == update_data["sede_id"]).first()
+        if not sede:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Sede con id {update_data['sede_id']} no encontrada"
+            )
+    
+    if "acudiente_id" in update_data and update_data["acudiente_id"]:
+        from src.db.models import Acudiente
+        acudiente = db.query(Acudiente).filter(Acudiente.id_acudiente == update_data["acudiente_id"]).first()
+        if not acudiente:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Acudiente con id {update_data['acudiente_id']} no encontrado"
+            )
+    
+    # Aplicar actualizaciones
+    for key, value in update_data.items():
+        setattr(child, key, value)
+    
+    db.commit()
+    db.refresh(child)
+    
+    return child
 
-@router.delete("/{child_id}", status_code=204)
-def delete_child(child_id: int):
-    if child_id not in _DB:
-        raise HTTPException(status_code=404, detail="Child not found")
-    del _DB[child_id]
-    # 204 No Content -> FastAPI no devolverá cuerpo
+
+@router.delete("/{child_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_child(
+    child_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Elimina un infante
+    """
+    child = db.query(Infante).filter(Infante.id_infante == child_id).first()
+    
+    if not child:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Infante con id {child_id} no encontrado"
+        )
+    
+    db.delete(child)
+    db.commit()
+    
+    return None
+
+
+@router.get("/{child_id}/seguimientos", response_model=List[dict])
+def get_child_followups(
+    child_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Obtiene todos los seguimientos de un infante específico
+    """
+    child = db.query(Infante).filter(Infante.id_infante == child_id).first()
+    
+    if not child:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Infante con id {child_id} no encontrado"
+        )
+    
+    # Obtener seguimientos relacionados
+    from src.db.models import Seguimiento
+    seguimientos = db.query(Seguimiento).filter(
+        Seguimiento.infante_id == child_id
+    ).all()
+    
+    return [
+        {
+            "id_seguimiento": s.id_seguimiento,
+            "fecha": s.fecha,
+            "observacion": s.observacion,
+            "encargado_id": s.encargado_id
+        }
+        for s in seguimientos
+    ]

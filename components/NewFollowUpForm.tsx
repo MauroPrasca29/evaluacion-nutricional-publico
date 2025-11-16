@@ -1,7 +1,7 @@
 "use client"
 
-import { useState } from "react"
-import { Save, Search, User, Camera, FileText, Activity } from "lucide-react"
+import { useState, useEffect } from "react"
+import { Save, Search, User, Camera, FileText, Activity, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -14,16 +14,27 @@ import { FileUpload } from "./FileUpload"
 import { FollowUpResults } from "./FollowUpResults"
 import type { ThemeColors, FollowUpForm, Child } from "@/types"
 import { SYMPTOMS_OPTIONS, PHYSICAL_SIGNS_OPTIONS } from "@/types"
-import { mockChildren } from "@/data/mockData"
+import { toast } from "sonner"
 
 interface NewFollowUpFormProps {
   theme: ThemeColors
+}
+
+interface Infante {
+  id_infante: number
+  nombre: string
+  fecha_nacimiento: string
+  genero: string
+  sede_id: number | null
+  acudiente_id: number | null
 }
 
 export function NewFollowUpForm({ theme }: NewFollowUpFormProps) {
   const [selectedChild, setSelectedChild] = useState<Child | null>(null)
   const [searchTerm, setSearchTerm] = useState("")
   const [showResults, setShowResults] = useState(false)
+  const [children, setChildren] = useState<Infante[]>([])
+  const [loading, setLoading] = useState(true)
   const [formData, setFormData] = useState<FollowUpForm>({
     childId: 0,
     weight: "",
@@ -43,7 +54,32 @@ export function NewFollowUpForm({ theme }: NewFollowUpFormProps) {
     caregiverComments: "",
   })
 
-  const filteredChildren = mockChildren.filter((child) => child.name.toLowerCase().includes(searchTerm.toLowerCase()))
+  const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000"
+
+  // Cargar infantes desde la API
+  useEffect(() => {
+    const fetchChildren = async () => {
+      try {
+        const response = await fetch(`${apiBase}/api/children/`)
+        if (response.ok) {
+          const data = await response.json()
+          setChildren(data)
+        } else {
+          console.error("Error al cargar infantes")
+        }
+      } catch (error) {
+        console.error("Error de conexión al cargar infantes:", error)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchChildren()
+  }, [apiBase])
+
+  const filteredChildren = children.filter((child) => 
+    child.nombre.toLowerCase().includes(searchTerm.toLowerCase())
+  )
 
   const calculateAge = (birthDate: string) => {
     const today = new Date()
@@ -51,7 +87,12 @@ export function NewFollowUpForm({ theme }: NewFollowUpFormProps) {
     const ageInMonths = (today.getFullYear() - birth.getFullYear()) * 12 + (today.getMonth() - birth.getMonth())
     const years = Math.floor(ageInMonths / 12)
     const months = ageInMonths % 12
-    return `${years} años ${months} meses`
+    
+    if (years > 0) {
+      return `${years} año${years !== 1 ? 's' : ''} ${months} mes${months !== 1 ? 'es' : ''}`
+    } else {
+      return `${months} mes${months !== 1 ? 'es' : ''}`
+    }
   }
 
   const calculateBMI = (weight: string, height: string) => {
@@ -64,9 +105,27 @@ export function NewFollowUpForm({ theme }: NewFollowUpFormProps) {
     return ""
   }
 
-  const handleChildSelect = (child: Child) => {
-    setSelectedChild(child)
-    setFormData({ ...formData, childId: child.id })
+  const handleChildSelect = (child: Infante) => {
+    // Convertir Infante a Child
+    const childData: Child = {
+      id: child.id_infante.toString(),
+      name: child.nombre,
+      age: calculateAge(child.fecha_nacimiento),
+      gender: child.genero === "M" ? "Masculino" : "Femenino",
+      birthDate: child.fecha_nacimiento,
+      community: child.sede_id ? child.sede_id.toString() : "N/A",
+      guardian: child.acudiente_id ? child.acudiente_id.toString() : "N/A",
+      phone: "N/A",
+      address: "N/A",
+      status: "normal",
+      lastCheckup: "N/A",
+      weight: 0,
+      height: 0,
+      bmi: 0,
+    }
+    
+    setSelectedChild(childData)
+    setFormData({ ...formData, childId: child.id_infante })
     setSearchTerm("")
   }
 
@@ -94,18 +153,101 @@ export function NewFollowUpForm({ theme }: NewFollowUpFormProps) {
     setFormData({ ...formData, gumPhotos: files })
   }
 
-  const handleSubmit = () => {
+  // Generar la lista de observaciones clínicas automáticamente
+  const getObservacionesClinicas = () => {
+    const observaciones: string[] = []
+    
+    if (formData.symptoms.length > 0) {
+      observaciones.push(`Síntomas: ${formData.symptoms.join(', ')}`)
+    }
+    
+    if (formData.physicalSigns.length > 0) {
+      observaciones.push(`Signos físicos: ${formData.physicalSigns.join(', ')}`)
+    }
+    
+    return observaciones
+  }
+
+    const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    
     if (!selectedChild) {
-      alert("Por favor selecciona un niño")
+      toast.error("Error", {
+        description: "Debes seleccionar un infante primero"
+      })
       return
     }
-    console.log("Seguimiento guardado:", formData)
-    setShowResults(true)
+
+    try {
+      const apiBase = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8000'
+      
+      const observacionesClinicas = getObservacionesClinicas()
+      
+  const seguimientoData = {
+    infante_id: formData.childId, // Usar formData.childId en lugar de selectedChild.id_infante
+    fecha: new Date().toISOString().split('T')[0],
+    observacion: formData.clinicalObservations || "",
+    observaciones_clinicas: observacionesClinicas,
+    peso: parseFloat(formData.weight) || null,
+    estatura: parseFloat(formData.height) || null,
+    circunferencia_braquial: parseFloat(formData.armCircumference) || null,
+    perimetro_cefalico: parseFloat(formData.headCircumference) || null,
+    pliegue_cutaneo: parseFloat(formData.tricepsFold) || null,
+    perimetro_abdominal: parseFloat(formData.abdominalPerimeter) || null,
+    hemoglobina: parseFloat(formData.hemoglobin) || null,
+    foto_ojo_url: null
+  }
+
+  console.log("Enviando seguimiento:", seguimientoData)
+  console.log("ID del infante:", formData.childId) // Para debug
+      const response = await fetch(`${apiBase}/api/followups/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(seguimientoData)
+      })
+
+      if (response.ok) {
+        const result = await response.json()
+        console.log("Seguimiento creado exitosamente:", result)
+        
+        toast.success("¡Seguimiento registrado exitosamente!", {
+          description: `ID del seguimiento: ${result.id_seguimiento}`,
+          duration: 4000,
+        })
+        
+        // Mostrar la pantalla de resultados
+        setShowResults(true)
+      } else {
+        const error = await response.json()
+        console.error("Error al crear seguimiento:", error)
+        toast.error("Error al registrar seguimiento", {
+          description: error.detail || 'Error desconocido',
+          duration: 5000,
+        })
+      }
+    } catch (error) {
+      console.error("Error de conexión:", error)
+      toast.error("Error de conexión", {
+        description: "No se pudo conectar con el servidor. Verifica tu conexión.",
+        duration: 5000,
+      })
+    }
   }
 
   const handleSaveToProfile = () => {
-    // Aquí se guardaría en el perfil del niño
+    // Esta función ya no es necesaria, eliminamos setShowResults(true) del handleSubmit
     console.log("Guardando en perfil del niño:", selectedChild?.id)
+  }
+
+  const getInitials = (nombre: string): string => {
+    return nombre
+      .split(" ")
+      .map((n) => n[0])
+      .slice(0, 2)
+      .join("")
+      .toUpperCase()
   }
 
   if (showResults && selectedChild) {
@@ -133,53 +275,67 @@ export function NewFollowUpForm({ theme }: NewFollowUpFormProps) {
           <CardHeader>
             <CardTitle className="text-xl font-bold text-slate-800 flex items-center gap-2">
               <User className="w-5 h-5" />
-              Seleccionar Niño
+              Seleccionar Infante
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
               <Input
-                placeholder="Buscar niño por nombre..."
+                placeholder="Buscar infante por nombre..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-10 border-amber-200 focus:border-amber-400"
               />
             </div>
 
-            <div className="grid gap-3 max-h-60 overflow-y-auto">
-              {filteredChildren.map((child) => (
-                <div
-                  key={child.id}
-                  className="flex items-center justify-between p-3 border rounded-lg hover:bg-slate-50 cursor-pointer transition-colors"
-                  onClick={() => handleChildSelect(child)}
-                >
-                  <div className="flex items-center gap-3">
-                    <Avatar className="w-10 h-10">
-                      <AvatarFallback className="bg-gradient-to-br from-blue-400 to-blue-500 text-white font-bold text-sm">
-                        {child.name
-                          .split(" ")
-                          .map((n) => n[0])
-                          .join("")}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div>
-                      <h4 className="font-semibold text-slate-800">{child.name}</h4>
-                      <p className="text-sm text-slate-600">
-                        {calculateAge(child.birthDate)} • {child.community}
-                      </p>
-                    </div>
-                  </div>
-                  <Badge
-                    className={`${
-                      child.status === "normal" ? "bg-green-100 text-green-800" : "bg-orange-100 text-orange-800"
-                    }`}
+            {loading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-8 h-8 animate-spin text-amber-600" />
+                <span className="ml-3 text-slate-600">Cargando infantes...</span>
+              </div>
+            ) : filteredChildren.length === 0 ? (
+              <div className="text-center py-8">
+                <p className="text-slate-600">
+                  {searchTerm
+                    ? "No se encontraron infantes con ese nombre"
+                    : "No hay infantes registrados"}
+                </p>
+              </div>
+            ) : (
+              <div className="grid gap-3 max-h-96 overflow-y-auto">
+                {filteredChildren.map((child) => (
+                  <div
+                    key={child.id_infante}
+                    className="flex items-center justify-between p-3 border rounded-lg hover:bg-slate-50 cursor-pointer transition-colors"
+                    onClick={() => handleChildSelect(child)}
                   >
-                    {child.status}
-                  </Badge>
-                </div>
-              ))}
-            </div>
+                    <div className="flex items-center gap-3">
+                      <Avatar className="w-10 h-10">
+                        <AvatarFallback className="bg-gradient-to-br from-blue-400 to-blue-500 text-white font-bold text-sm">
+                          {getInitials(child.nombre)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div>
+                        <h4 className="font-semibold text-slate-800">{child.nombre}</h4>
+                        <p className="text-sm text-slate-600">
+                          {calculateAge(child.fecha_nacimiento)} • {child.genero === "M" ? "Masculino" : "Femenino"}
+                        </p>
+                      </div>
+                    </div>
+                    <Badge className="bg-blue-100 text-blue-800">
+                      ID: {child.id_infante}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            )}
+            
+            {!loading && filteredChildren.length > 0 && (
+              <div className="text-center text-sm text-slate-600">
+                Mostrando {filteredChildren.length} de {children.length} infante{children.length !== 1 ? 's' : ''}
+              </div>
+            )}
           </CardContent>
         </Card>
       ) : (
@@ -191,16 +347,13 @@ export function NewFollowUpForm({ theme }: NewFollowUpFormProps) {
                 <div className="flex items-center gap-4">
                   <Avatar className="w-12 h-12">
                     <AvatarFallback className="bg-gradient-to-br from-blue-400 to-blue-500 text-white font-bold">
-                      {selectedChild.name
-                        .split(" ")
-                        .map((n) => n[0])
-                        .join("")}
+                      {getInitials(selectedChild.name)}
                     </AvatarFallback>
                   </Avatar>
                   <div>
                     <h3 className="font-bold text-slate-800 text-lg">{selectedChild.name}</h3>
                     <p className="text-slate-600">
-                      {calculateAge(selectedChild.birthDate)} • {selectedChild.community}
+                      {calculateAge(selectedChild.birthDate)} • {selectedChild.gender}
                     </p>
                   </div>
                 </div>
@@ -209,7 +362,7 @@ export function NewFollowUpForm({ theme }: NewFollowUpFormProps) {
                   onClick={() => setSelectedChild(null)}
                   className="hover:bg-red-50 hover:border-red-200 hover:text-red-600"
                 >
-                  Cambiar niño
+                  Cambiar infante
                 </Button>
               </div>
             </CardContent>
@@ -341,7 +494,7 @@ export function NewFollowUpForm({ theme }: NewFollowUpFormProps) {
                           checked={formData.symptoms.includes(symptom)}
                           onCheckedChange={(checked) => handleSymptomChange(symptom, checked as boolean)}
                         />
-                        <Label htmlFor={`symptom-${symptom}`} className="text-sm">
+                        <Label htmlFor={`symptom-${symptom}`} className="text-sm cursor-pointer">
                           {symptom}
                         </Label>
                       </div>
@@ -360,7 +513,7 @@ export function NewFollowUpForm({ theme }: NewFollowUpFormProps) {
                           checked={formData.physicalSigns.includes(sign)}
                           onCheckedChange={(checked) => handlePhysicalSignChange(sign, checked as boolean)}
                         />
-                        <Label htmlFor={`sign-${sign}`} className="text-sm">
+                        <Label htmlFor={`sign-${sign}`} className="text-sm cursor-pointer">
                           {sign}
                         </Label>
                       </div>
@@ -368,16 +521,31 @@ export function NewFollowUpForm({ theme }: NewFollowUpFormProps) {
                   </div>
                 </div>
 
-                {/* Observaciones adicionales */}
+                {/* Vista previa de observaciones seleccionadas */}
+                {(formData.symptoms.length > 0 || formData.physicalSigns.length > 0) && (
+                  <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg space-y-2">
+                    <h4 className="font-semibold text-blue-900 text-sm">Observaciones clínicas registradas:</h4>
+                    {getObservacionesClinicas().map((obs, idx) => (
+                      <p key={idx} className="text-sm text-blue-800">• {obs}</p>
+                    ))}
+                  </div>
+                )}
+
+                {/* Observaciones del nutricionista */}
                 <div className="space-y-2">
-                  <Label htmlFor="clinicalObservations">Observaciones clínicas adicionales</Label>
+                  <Label htmlFor="clinicalObservations" className="text-base font-semibold">
+                    Observaciones del nutricionista
+                  </Label>
                   <Textarea
                     id="clinicalObservations"
-                    placeholder="Describe observaciones clínicas adicionales..."
+                    placeholder="Escribe aquí las observaciones y notas del nutricionista sobre la evaluación..."
                     value={formData.clinicalObservations}
                     onChange={(e) => setFormData({ ...formData, clinicalObservations: e.target.value })}
-                    className="min-h-[100px] border-amber-200 focus:border-amber-400"
+                    className="min-h-[120px] border-amber-200 focus:border-amber-400"
                   />
+                  <p className="text-xs text-slate-500">
+                    Este campo es para las observaciones específicas del profesional nutricionista.
+                  </p>
                 </div>
               </CardContent>
             </Card>
@@ -392,7 +560,7 @@ export function NewFollowUpForm({ theme }: NewFollowUpFormProps) {
               <CardContent className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div className="space-y-2">
-                    <Label htmlFor="hemoglobin">Hemoglobina (g/dL)</Label>
+                    <Label htmlFor="hemoglobin">Hemoglobina (g/dL) - Opcional</Label>
                     <Input
                       id="hemoglobin"
                       type="number"
@@ -400,26 +568,6 @@ export function NewFollowUpForm({ theme }: NewFollowUpFormProps) {
                       placeholder="12.5"
                       value={formData.hemoglobin}
                       onChange={(e) => setFormData({ ...formData, hemoglobin: e.target.value })}
-                      className="border-amber-200 focus:border-amber-400"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="stoolExam">Examen de heces</Label>
-                    <Input
-                      id="stoolExam"
-                      placeholder="Resultado del examen"
-                      value={formData.stoolExam}
-                      onChange={(e) => setFormData({ ...formData, stoolExam: e.target.value })}
-                      className="border-amber-200 focus:border-amber-400"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="urineExam">Examen de orina</Label>
-                    <Input
-                      id="urineExam"
-                      placeholder="Resultado del examen"
-                      value={formData.urineExam}
-                      onChange={(e) => setFormData({ ...formData, urineExam: e.target.value })}
                       className="border-amber-200 focus:border-amber-400"
                     />
                   </div>
@@ -434,45 +582,17 @@ export function NewFollowUpForm({ theme }: NewFollowUpFormProps) {
               <CardHeader>
                 <CardTitle className="text-xl font-bold text-slate-800 flex items-center gap-2">
                   <Camera className="w-5 h-5" />
-                  Imágenes Clínicas
+                  Fotografía Clínica
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 gap-6">
                   <FileUpload
                     id="eye-photos"
-                    label="Foto de ojos"
+                    label="Foto de ojos (opcional)"
                     accept="image/*"
-                    multiple={true}
+                    multiple={false}
                     onFilesChange={handleEyePhotosChange}
-                  />
-                  <FileUpload
-                    id="gum-photos"
-                    label="Foto de encías"
-                    accept="image/*"
-                    multiple={true}
-                    onFilesChange={handleGumPhotosChange}
-                  />
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Comentarios del Cuidador */}
-            <Card
-              className={`${theme.cardBorder} bg-gradient-to-br from-white to-orange-50 transition-all duration-500`}
-            >
-              <CardHeader>
-                <CardTitle className="text-xl font-bold text-slate-800">Comentarios del Cuidador</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="caregiverComments">Observaciones y comentarios del cuidador</Label>
-                  <Textarea
-                    id="caregiverComments"
-                    placeholder="Registra los comentarios, preocupaciones o observaciones del cuidador..."
-                    value={formData.caregiverComments}
-                    onChange={(e) => setFormData({ ...formData, caregiverComments: e.target.value })}
-                    className="min-h-[120px] border-amber-200 focus:border-amber-400"
                   />
                 </div>
               </CardContent>
@@ -489,6 +609,7 @@ export function NewFollowUpForm({ theme }: NewFollowUpFormProps) {
               </Button>
               <Button
                 variant="outline"
+                onClick={() => setSelectedChild(null)}
                 className={`px-8 py-3 ${theme.cardBorder} hover:bg-opacity-50 bg-transparent transition-all duration-300 hover:scale-105 shadow-lg rounded-xl`}
               >
                 Cancelar

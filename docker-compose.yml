@@ -2,8 +2,8 @@ services:
   backend:
     build: ./backend
     container_name: backend_nutricion
-    environment:
-      DATABASE_URL: postgresql://postgres:bTetrAaOJflcvPQCEcqmrAGLJwgtGgCX@shortline.proxy.rlwy.net:33856/railway
+    env_file:
+      - .env
     ports:
       - "8000:8000"
     volumes:

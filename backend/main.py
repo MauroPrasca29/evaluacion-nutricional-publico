@@ -91,6 +91,8 @@ followups_router    = _try_import_router(["api.followups", "src.api.followups"])
 reports_router      = _try_import_router(["api.reports", "src.api.reports"])
 import_excel_router = _try_import_router(["api.import_excel", "src.api.import_excel"])
 nutrition_router    = _try_import_router(["api.nutrition", "src.api.nutrition"])
+sedes_router = _try_import_router(["api.sedes", "src.api.sedes"])
+acudientes_router = _try_import_router(["api.acudientes", "src.api.acudientes"])
 
 # ---------- Lifespan ----------
 @asynccontextmanager
@@ -185,7 +187,10 @@ if import_excel_router:
     app.include_router(import_excel_router, prefix="/api/import", tags=["import"])
 if nutrition_router:
     app.include_router(nutrition_router, prefix="/api", tags=["nutrition"])
-
+if sedes_router:
+    app.include_router(sedes_router, prefix="/api/sedes", tags=["sedes"])
+if acudientes_router:
+    app.include_router(acudientes_router, prefix="/api/acudientes", tags=["acudientes"])
 # ---------- Manejadores globales ----------
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
