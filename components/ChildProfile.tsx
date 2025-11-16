@@ -12,6 +12,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { GrowthChart } from "@/components/GrowthChart"
 import { FollowUpResults } from "@/components/FollowUpResults"
 import type { Child, ThemeColors, FollowUpForm } from "@/types"
+import { apiFetch } from "@/lib/api"
 
 interface ChildProfileProps {
   child: Child
@@ -65,7 +66,7 @@ export function ChildProfile({ child, theme, onBack }: ChildProfileProps) {
       setLoading(true)
       try {
         // Cargar seguimientos del infante
-        const followupsRes = await fetch(`${apiBase}/api/children/${child.id}/followups`)
+        const followupsRes = await apiFetch(`${apiBase}/api/children/${child.id}/followups`)
         if (followupsRes.ok) {
           const data = await followupsRes.json()
           console.log("Seguimientos recibidos:", data)
@@ -78,7 +79,7 @@ export function ChildProfile({ child, theme, onBack }: ChildProfileProps) {
         if (child.community && child.community !== "N/A") {
           const sedeId = parseInt(child.community)
           if (!isNaN(sedeId)) {
-            const sedeRes = await fetch(`${apiBase}/api/sedes/${sedeId}`)
+            const sedeRes = await apiFetch(`${apiBase}/api/sedes/${sedeId}`)
             if (sedeRes.ok) {
               const sedeData = await sedeRes.json()
               setSede(sedeData)
@@ -90,7 +91,7 @@ export function ChildProfile({ child, theme, onBack }: ChildProfileProps) {
         if (child.guardian && child.guardian !== "N/A") {
           const acudienteId = parseInt(child.guardian)
           if (!isNaN(acudienteId)) {
-            const acudienteRes = await fetch(`${apiBase}/api/acudientes/${acudienteId}`)
+            const acudienteRes = await apiFetch(`${apiBase}/api/acudientes/${acudienteId}`)
             if (acudienteRes.ok) {
               const acudienteData = await acudienteRes.json()
               setAcudiente(acudienteData)

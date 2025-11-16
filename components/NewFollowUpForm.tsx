@@ -15,6 +15,7 @@ import { FollowUpResults } from "./FollowUpResults"
 import type { ThemeColors, FollowUpForm, Child } from "@/types"
 import { SYMPTOMS_OPTIONS, PHYSICAL_SIGNS_OPTIONS } from "@/types"
 import { toast } from "sonner"
+import { apiFetch, apiJson } from "@/lib/api"
 
 interface NewFollowUpFormProps {
   theme: ThemeColors
@@ -60,7 +61,7 @@ export function NewFollowUpForm({ theme }: NewFollowUpFormProps) {
   useEffect(() => {
     const fetchChildren = async () => {
       try {
-        const response = await fetch(`${apiBase}/api/children/`)
+        const response = await apiFetch(`${apiBase}/api/children/`)
         if (response.ok) {
           const data = await response.json()
           setChildren(data)
@@ -201,7 +202,7 @@ export function NewFollowUpForm({ theme }: NewFollowUpFormProps) {
       console.log("Enviando seguimiento:", seguimientoData)
       console.log("ID del infante:", formData.childId)
       
-      const response = await fetch(`${apiBase}/api/followups/`, {
+      const response = await apiFetch(`${apiBase}/api/followups/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

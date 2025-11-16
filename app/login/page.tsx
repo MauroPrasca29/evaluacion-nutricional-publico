@@ -19,17 +19,34 @@ export default function LoginPage() {
       form.append("username", correo)
       form.append("password", contrasena)
 
-      const apiBase = (process.env.NEXT_PUBLIC_API_URL as string) || 'http://127.0.0.1:8100'
-      const apiBase = (process.env.NEXT_PUBLIC_API_URL as string) || 'http://localhost:8100'
-      const res = await fetch(`${apiBase}/api/auth/token`, {
+      // use getApiBase from the shared helper (handles previews & local dev)
+      // Send request to local proxy to avoid CORS in previews
+      const proxyUrl = `/api/proxy/api/auth/token`
+      console.log('Login: using proxy ->', proxyUrl)
+
+      const res = await fetch(proxyUrl, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: form.toString(),
       })
 
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        setError(data.detail || "Credenciales inválidas")
+        // Intentar parsear JSON, si no, usar text
+        let detail = ''
+        try {
+          const data = await res.json()
+          detail = data.detail || data.message || JSON.stringify(data)
+        } catch (e) {
+          try {
+            detail = await res.text()
+          } catch (_) {
+            detail = ''
+          }
+        }
+        const statusMsg = `${res.status}${res.statusText ? ' ' + res.statusText : ''}`
+        const userMsg = detail ? `${statusMsg}: ${detail}` : `${statusMsg}: Credenciales inválidas o error en el servidor`
+        setError(userMsg)
+        console.error('Login failed:', statusMsg, detail)
         setLoading(false)
         return
       }

@@ -8,6 +8,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { NewChildForm } from "./NewChildForm"
+import { apiFetch } from "@/lib/api"
 import { ChildProfile } from "./ChildProfile"
 import type { ThemeColors, NewChildForm as NewChildFormType, Child } from "@/types"
 
@@ -39,7 +40,7 @@ export function ChildrenManagement({ theme }: ChildrenManagementProps) {
   const fetchChildren = async () => {
     try {
       const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000"
-      const response = await fetch(`${apiBase}/api/children/`)
+      const response = await apiFetch(`${apiBase}/api/children/`)
       
       if (response.ok) {
         const data = await response.json()

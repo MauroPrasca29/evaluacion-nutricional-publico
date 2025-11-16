@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import type { Child, ThemeColors } from "@/types"
 import { toast } from "sonner"
+import { apiFetch } from "@/lib/api"
 
 interface FollowUpResultsProps {
   child: Child
@@ -76,8 +77,8 @@ export function FollowUpResults({ child, followUpData, theme, onClose, onSaveToP
         
         console.log("Cargando evaluación para seguimiento:", seguimientoId)
         
-        const response = await fetch(`${apiBase}/api/followups/${seguimientoId}/evaluacion`)
-        
+        const response = await apiFetch(`${apiBase}/api/followups/${seguimientoId}/evaluacion`)
+
         if (response.ok) {
           const data = await response.json()
           console.log("Evaluación cargada:", data)
@@ -181,12 +182,12 @@ export function FollowUpResults({ child, followUpData, theme, onClose, onSaveToP
       })
       
       const url = `${apiBase}/api/nutrition/nutritional-report?${params.toString()}`
-      const response = await fetch(url)
-      
+      const response = await apiFetch(url)
+
       if (!response.ok) {
         throw new Error('Error al generar el reporte')
       }
-      
+
       const blob = await response.blob()
       const downloadUrl = window.URL.createObjectURL(blob)
       const link = document.createElement('a')

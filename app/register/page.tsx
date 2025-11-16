@@ -16,9 +16,9 @@ export default function RegisterPage() {
     setLoading(true)
     setError("")
     try {
-      const apiBase = (process.env.NEXT_PUBLIC_API_URL as string) || 'http://127.0.0.1:8100'
-      const apiBase = (process.env.NEXT_PUBLIC_API_URL as string) || 'http://localhost:8100'
-      const res = await fetch(`${apiBase}/api/auth/register`, {
+      const proxyUrl = `/api/proxy/api/auth/register`
+      console.log('Register: using proxy ->', proxyUrl)
+      const res = await fetch(`${proxyUrl}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ nombre, correo, telefono, contrasena }),

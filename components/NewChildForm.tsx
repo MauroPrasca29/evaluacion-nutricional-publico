@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { toast } from "sonner"
+import { apiFetch, apiJson } from "@/lib/api"
 import type { ThemeColors } from "@/types"
 
 interface NewChildFormProps {
@@ -67,7 +68,7 @@ export function NewChildForm({ theme, onClose, onSave }: NewChildFormProps) {
     const fetchSedes = async () => {
       try {
         const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000"
-        const response = await fetch(`${apiBase}/api/sedes/`)
+        const response = await apiFetch(`${apiBase}/api/sedes/`)
         
         if (response.ok) {
           const data = await response.json()
@@ -94,7 +95,7 @@ export function NewChildForm({ theme, onClose, onSave }: NewChildFormProps) {
           ? `${apiBase}/api/acudientes/?search=${encodeURIComponent(searchAcudiente)}`
           : `${apiBase}/api/acudientes/`
         
-        const response = await fetch(url)
+        const response = await apiFetch(url)
         
         if (response.ok) {
           const data = await response.json()
@@ -125,7 +126,7 @@ export function NewChildForm({ theme, onClose, onSave }: NewChildFormProps) {
     
     try {
       const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000"
-      const response = await fetch(`${apiBase}/api/acudientes/`, {
+      const response = await apiFetch(`${apiBase}/api/acudientes/`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -179,7 +180,7 @@ export function NewChildForm({ theme, onClose, onSave }: NewChildFormProps) {
 
     try {
       const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000"
-      const response = await fetch(`${apiBase}/api/children/`, {
+      const response = await apiFetch(`${apiBase}/api/children/`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
