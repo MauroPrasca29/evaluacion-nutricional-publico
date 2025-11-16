@@ -17,6 +17,7 @@ export default function NutritionalAssessmentApp() {
   const [currentView, setCurrentView] = useState("dashboard")
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [showNewChildForm, setShowNewChildForm] = useState(false)
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null)
 
   const theme = getThemeColors(currentView)
 
@@ -54,16 +55,21 @@ export default function NutritionalAssessmentApp() {
     }
   }
   useEffect(() => {
-    try {
-      const token = localStorage.getItem("token")
-      if (!token) {
-        router.push("/login")
-      }
-    } catch (e) {
-      // si ocurre algún error de acceso a localStorage, redirigimos igualmente
+    const token = localStorage.getItem("token")
+    if (!token) {
       router.push("/login")
+    } else {
+      setIsAuthenticated(true)
     }
   }, [router])
+
+  if (isAuthenticated === null) {
+    return null // Loading state — don't render anything until auth is checked
+  }
+
+  if (!isAuthenticated) {
+    return null // Will redirect, don't render dashboard
+  }
 
   return (
     <div className={`min-h-screen bg-gradient-to-br ${theme.gradient} transition-all duration-700`}>
