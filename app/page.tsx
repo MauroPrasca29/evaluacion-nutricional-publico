@@ -55,20 +55,31 @@ export default function NutritionalAssessmentApp() {
     }
   }
   useEffect(() => {
-    const token = localStorage.getItem("token")
-    if (!token) {
-      router.push("/login")
-    } else {
-      setIsAuthenticated(true)
+    const checkAuth = () => {
+      const token = localStorage.getItem("token")
+      if (!token) {
+        setIsAuthenticated(false)
+        router.push("/login")
+      } else {
+        setIsAuthenticated(true)
+      }
     }
+    
+    // Check auth immediately and also listen for storage changes
+    checkAuth()
+    
+    window.addEventListener("storage", checkAuth)
+    return () => window.removeEventListener("storage", checkAuth)
   }, [router])
 
   if (isAuthenticated === null) {
-    return null // Loading state — don't render anything until auth is checked
+    // Don't render anything until auth check is complete to avoid hydration mismatch
+    return null
   }
 
-  if (!isAuthenticated) {
-    return null // Will redirect, don't render dashboard
+  if (isAuthenticated === false) {
+    // Will redirect to /login via useEffect, don't render dashboard
+    return null
   }
 
   return (
