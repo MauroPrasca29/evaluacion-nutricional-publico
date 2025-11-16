@@ -1,280 +1,283 @@
-from typing import List, Optional
-from datetime import date, datetime
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
-from pydantic import BaseModel, Field
-from decimal import Decimal
+from typing import List, Optional
+from datetime import date
+from pydantic import BaseModel
 
 from src.db.session import get_db
-from src.db.models import Seguimiento, Infante, DatoAntropometrico, Examen
+from src.db.models import Seguimiento, DatoAntropometrico, Examen, EvaluacionNutricional
+from src.services.nutrition_service import NutritionService
 
-router = APIRouter(tags=["followups"])
-
-# ====== Schemas ======
+router = APIRouter()
 
 class FollowupCreate(BaseModel):
-    infante_id: int = Field(..., ge=1)
-    fecha: date
-    observacion: Optional[str] = None
-    # Observaciones clínicas (síntomas y signos físicos concatenados)
-    observaciones_clinicas: Optional[List[str]] = None
-    # Datos antropométricos
-    peso: float = Field(..., ge=0)
-    estatura: float = Field(..., ge=0)
-    imc: Optional[float] = None
-    circunferencia_braquial: Optional[float] = Field(None, ge=0)
-    perimetro_cefalico: Optional[float] = Field(None, ge=0)
-    pliegue_cutaneo: Optional[float] = Field(None, ge=0)
-    perimetro_abdominal: Optional[float] = Field(None, ge=0)
-    # Exámenes
-    hemoglobina: Optional[float] = Field(None, ge=0)
-    # Foto
-    foto_ojo_url: Optional[str] = None
-
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "infante_id": 1,
-                "fecha": "2024-11-15",
-                "observacion": "Observaciones del nutricionista sobre la evaluación",
-                "observaciones_clinicas": [
-                    "Síntomas: Pérdida de apetito, Fatiga o debilidad",
-                    "Signos físicos: Palidez en piel o mucosas"
-                ],
-                "peso": 15.5,
-                "estatura": 95.0,
-                "imc": 17.2,
-                "circunferencia_braquial": 16.5,
-                "perimetro_cefalico": 48.0,
-                "pliegue_cutaneo": 12.5,
-                "perimetro_abdominal": 52.0,
-                "hemoglobina": 11.5,
-                "foto_ojo_url": "https://example.com/photos/eye123.jpg"
-            }
-        }
-
-
-class FollowupOut(BaseModel):
-    id_seguimiento: int
     infante_id: int
     fecha: date
     observacion: Optional[str] = None
-    # Datos antropométricos
+    observaciones_clinicas: List[str] = []
     peso: Optional[float] = None
     estatura: Optional[float] = None
-    imc: Optional[float] = None
     circunferencia_braquial: Optional[float] = None
     perimetro_cefalico: Optional[float] = None
     pliegue_cutaneo: Optional[float] = None
     perimetro_abdominal: Optional[float] = None
-    # Exámenes
     hemoglobina: Optional[float] = None
-    # Foto
     foto_ojo_url: Optional[str] = None
 
-    class Config:
-        from_attributes = True
-
-
-class FollowupDetailOut(BaseModel):
-    seguimiento: FollowupOut
-    infante_nombre: str
-
-    class Config:
-        from_attributes = True
-
-
-# ====== Endpoints ======
-
-@router.get("/ping")
-def ping():
-    return {"ok": True, "service": "followups"}
-
-
-@router.get("/", response_model=List[FollowupOut])
-def list_followups(
-    infante_id: Optional[int] = None,
-    limit: int = 100,
-    offset: int = 0,
-    db: Session = Depends(get_db)
-):
-    """
-    Lista todos los seguimientos, opcionalmente filtrados por infante_id
-    """
-    query = db.query(Seguimiento)
-    
-    if infante_id:
-        query = query.filter(Seguimiento.infante_id == infante_id)
-    
-    seguimientos = query.order_by(Seguimiento.fecha.desc()).offset(offset).limit(limit).all()
-    
-    # Construir respuesta con datos antropométricos y exámenes
-    result = []
-    for seg in seguimientos:
-        # Obtener datos antropométricos
-        dato_antro = db.query(DatoAntropometrico).filter(
-            DatoAntropometrico.seguimiento_id == seg.id_seguimiento
-        ).first()
+@router.post("/")
+def create_followup(followup_data: FollowupCreate, db: Session = Depends(get_db)):
+    try:
+        # Concatenar observaciones
+        observaciones_texto = ", ".join(followup_data.observaciones_clinicas)
+        if followup_data.observacion:
+            observaciones_texto = f"{observaciones_texto}. {followup_data.observacion}" if observaciones_texto else followup_data.observacion
         
-        # Obtener exámenes
-        examen = db.query(Examen).filter(
-            Examen.seguimiento_id == seg.id_seguimiento
-        ).first()
-        
-        result.append(FollowupOut(
-            id_seguimiento=seg.id_seguimiento,
-            infante_id=seg.infante_id,
-            fecha=seg.fecha,
-            observacion=seg.observacion,
-            peso=float(dato_antro.peso) if dato_antro and dato_antro.peso else None,
-            estatura=float(dato_antro.estatura) if dato_antro and dato_antro.estatura else None,
-            imc=float(dato_antro.imc) if dato_antro and dato_antro.imc else None,
-            circunferencia_braquial=float(dato_antro.circunferencia_braquial) if dato_antro and dato_antro.circunferencia_braquial else None,
-            perimetro_cefalico=float(dato_antro.perimetro_cefalico) if dato_antro and dato_antro.perimetro_cefalico else None,
-            pliegue_cutaneo=float(dato_antro.pliegue_cutaneo) if dato_antro and dato_antro.pliegue_cutaneo else None,
-            perimetro_abdominal=float(dato_antro.perimetro_abdominal) if dato_antro and dato_antro.perimetro_abdominal else None,
-            hemoglobina=float(examen.hemoglobina) if examen and examen.hemoglobina else None,
-            foto_ojo_url=None  # Agregar cuando implementes almacenamiento de fotos
-        ))
-    
-    return result
-
-
-@router.post("/", response_model=FollowupOut, status_code=status.HTTP_201_CREATED)
-def create_followup(payload: FollowupCreate, db: Session = Depends(get_db)):
-    """
-    Crea un nuevo seguimiento con datos antropométricos y exámenes
-    """
-    # Verificar que el infante existe
-    infante = db.query(Infante).filter(Infante.id_infante == payload.infante_id).first()
-    if not infante:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Infante con id {payload.infante_id} no encontrado"
+        # Crear seguimiento
+        nuevo_seguimiento = Seguimiento(
+            infante_id=followup_data.infante_id,
+            fecha=followup_data.fecha,
+            observacion=observaciones_texto,
+            encargado_id=None  # TODO: obtener del usuario autenticado
         )
-    
-    # Concatenar observaciones clínicas con observaciones del nutricionista
-    observacion_completa = ""
-    if payload.observaciones_clinicas:
-        observacion_completa = "\n".join(payload.observaciones_clinicas)
-        if payload.observacion:
-            observacion_completa += f"\n\nObservaciones del nutricionista:\n{payload.observacion}"
-    else:
-        observacion_completa = payload.observacion or ""
-    
-    # Crear seguimiento
-    nuevo_seguimiento = Seguimiento(
-        infante_id=payload.infante_id,
-        fecha=payload.fecha,
-        observacion=observacion_completa,
-        encargado_id=None  # TODO: Obtener del usuario autenticado
-    )
-    db.add(nuevo_seguimiento)
-    db.flush()  # Para obtener el id_seguimiento
-    
-    # Calcular IMC si no viene
-    imc = payload.imc
-    if not imc and payload.peso and payload.estatura:
-        altura_metros = payload.estatura / 100
-        imc = payload.peso / (altura_metros * altura_metros)
-    
-    # Crear datos antropométricos
-    datos_antro = DatoAntropometrico(
-        seguimiento_id=nuevo_seguimiento.id_seguimiento,
-        peso=Decimal(str(payload.peso)),
-        estatura=Decimal(str(payload.estatura)),
-        imc=Decimal(str(round(imc, 2))) if imc else None,
-        circunferencia_braquial=Decimal(str(payload.circunferencia_braquial)) if payload.circunferencia_braquial else None,
-        perimetro_cefalico=Decimal(str(payload.perimetro_cefalico)) if payload.perimetro_cefalico else None,
-        pliegue_cutaneo=Decimal(str(payload.pliegue_cutaneo)) if payload.pliegue_cutaneo else None,
-        perimetro_abdominal=Decimal(str(payload.perimetro_abdominal)) if payload.perimetro_abdominal else None
-    )
-    db.add(datos_antro)
-    
-    # Crear exámenes si hay hemoglobina
-    if payload.hemoglobina:
-        examen = Examen(
+        db.add(nuevo_seguimiento)
+        db.flush()
+        
+        # Calcular IMC si no viene
+        imc = followup_data.imc if hasattr(followup_data, 'imc') else None
+        if not imc and followup_data.peso and followup_data.estatura:
+            altura_metros = followup_data.estatura / 100
+            imc = followup_data.peso / (altura_metros ** 2)
+        
+        # Crear datos antropométricos
+        datos_antropo = DatoAntropometrico(
             seguimiento_id=nuevo_seguimiento.id_seguimiento,
-            hemoglobina=Decimal(str(payload.hemoglobina))
+            peso=followup_data.peso,
+            estatura=followup_data.estatura,
+            imc=imc,
+            circunferencia_braquial=followup_data.circunferencia_braquial,
+            perimetro_cefalico=followup_data.perimetro_cefalico,
+            pliegue_cutaneo=followup_data.pliegue_cutaneo,
+            perimetro_abdominal=followup_data.perimetro_abdominal
         )
-        db.add(examen)
-    
-    db.commit()
-    db.refresh(nuevo_seguimiento)
-    
-    return FollowupOut(
-        id_seguimiento=nuevo_seguimiento.id_seguimiento,
-        infante_id=nuevo_seguimiento.infante_id,
-        fecha=nuevo_seguimiento.fecha,
-        observacion=nuevo_seguimiento.observacion,
-        peso=float(datos_antro.peso),
-        estatura=float(datos_antro.estatura),
-        imc=float(datos_antro.imc) if datos_antro.imc else None,
-        circunferencia_braquial=float(datos_antro.circunferencia_braquial) if datos_antro.circunferencia_braquial else None,
-        perimetro_cefalico=float(datos_antro.perimetro_cefalico) if datos_antro.perimetro_cefalico else None,
-        pliegue_cutaneo=float(datos_antro.pliegue_cutaneo) if datos_antro.pliegue_cutaneo else None,
-        perimetro_abdominal=float(datos_antro.perimetro_abdominal) if datos_antro.perimetro_abdominal else None,
-        hemoglobina=float(payload.hemoglobina) if payload.hemoglobina else None,
-        foto_ojo_url=payload.foto_ojo_url
-    )
+        db.add(datos_antropo)
+        
+        # Crear examen
+        if followup_data.hemoglobina is not None:
+            examen = Examen(
+                seguimiento_id=nuevo_seguimiento.id_seguimiento,
+                hemoglobina=followup_data.hemoglobina
+            )
+            db.add(examen)
+        
+        # **NUEVO: Realizar evaluación nutricional y guardarla**
+        if followup_data.peso and followup_data.estatura:
+            # Obtener datos del infante para calcular edad
+            from src.db.models import Infante
+            infante = db.query(Infante).filter(Infante.id_infante == followup_data.infante_id).first()
+            
+            if infante:
+                # Calcular edad en días
+                from datetime import datetime
+                fecha_nacimiento = infante.fecha_nacimiento
+                if isinstance(fecha_nacimiento, str):
+                    fecha_nacimiento = datetime.strptime(fecha_nacimiento, "%Y-%m-%d").date()
+                
+                age_days = (followup_data.fecha - fecha_nacimiento).days
+                gender = 'male' if infante.genero == 'M' else 'female'
+                
+                # Realizar evaluación nutricional
+                assessment = NutritionService.assess_nutritional_status(
+                    age_days=age_days,
+                    weight=followup_data.peso,
+                    height=followup_data.estatura,
+                    gender=gender,
+                    head_circumference=followup_data.perimetro_cefalico,
+                    triceps_skinfold=followup_data.pliegue_cutaneo,
+                    subscapular_skinfold=None
+                )
+                
+                # Obtener requerimientos energéticos
+                energy_req = NutritionService.get_energy_requirement(
+                    age_days=age_days,
+                    weight=followup_data.peso,
+                    gender=gender,
+                    feeding_mode='mixed',
+                    activity_level='moderate'
+                )
+                
+                # Obtener requerimientos de nutrientes
+                nutrient_data = NutritionService.get_nutrient_food_table_data(
+                    age_days=age_days,
+                    gender=gender,
+                    weight=followup_data.peso,
+                    kcal_per_day=energy_req.get("kcal_per_day")
+                )
+                
+                # Generar recomendaciones
+                recommendations = NutritionService.generate_recommendations(assessment)
+                
+                # Guardar evaluación en la base de datos
+                evaluacion = EvaluacionNutricional(
+                    seguimiento_id=nuevo_seguimiento.id_seguimiento,
+                    imc=assessment.get("bmi"),
+                    peso_edad_zscore=assessment.get("weight_for_age_zscore"),
+                    talla_edad_zscore=assessment.get("height_for_age_zscore"),
+                    imc_edad_zscore=assessment.get("bmi_for_age_zscore"),
+                    perimetro_cefalico_zscore=assessment.get("head_circumference_zscore"),
+                    pliegue_triceps_zscore=assessment.get("triceps_skinfold_zscore"),
+                    pliegue_subescapular_zscore=assessment.get("subscapular_skinfold_zscore"),
+                    clasificacion_peso_edad=assessment["nutritional_status"].get("peso_edad"),
+                    clasificacion_talla_edad=assessment["nutritional_status"].get("talla_edad"),
+                    clasificacion_peso_talla=assessment["nutritional_status"].get("peso_talla"),
+                    clasificacion_imc_edad=assessment["nutritional_status"].get("imc_edad"),
+                    clasificacion_perimetro_cefalico=assessment["nutritional_status"].get("perimetro_cefalico_edad"),
+                    clasificacion_pliegue_triceps=assessment["nutritional_status"].get("pliegue_triceps"),
+                    clasificacion_pliegue_subescapular=assessment["nutritional_status"].get("pliegue_subescapular"),
+                    nivel_riesgo=assessment.get("risk_level", "Bajo"),
+                    requerimientos_energeticos=energy_req,
+                    requerimientos_nutrientes=nutrient_data,
+                    recomendaciones_nutricionales=recommendations.get("nutritional_recommendations", []),
+                    recomendaciones_generales=recommendations.get("general_recommendations", []),
+                    instrucciones_cuidador=recommendations.get("caregiver_instructions", [])
+                )
+                db.add(evaluacion)
+        
+        db.commit()
+        db.refresh(nuevo_seguimiento)
+        
+        return {
+            "id_seguimiento": nuevo_seguimiento.id_seguimiento,
+            "infante_id": nuevo_seguimiento.infante_id,
+            "fecha": nuevo_seguimiento.fecha,
+            "observacion": nuevo_seguimiento.observacion
+        }
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error al crear seguimiento: {str(e)}")
 
 
-@router.get("/{followup_id}", response_model=FollowupOut)
-def get_followup(followup_id: int, db: Session = Depends(get_db)):
+@router.get("/{seguimiento_id}/evaluacion")
+def get_evaluacion_nutricional(seguimiento_id: int, db: Session = Depends(get_db)):
     """
-    Obtiene un seguimiento específico por ID
+    Obtiene la evaluación nutricional completa de un seguimiento
     """
-    seguimiento = db.query(Seguimiento).filter(
-        Seguimiento.id_seguimiento == followup_id
+    evaluacion = db.query(EvaluacionNutricional).filter(
+        EvaluacionNutricional.seguimiento_id == seguimiento_id
     ).first()
     
-    if not seguimiento:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Seguimiento con id {followup_id} no encontrado"
-        )
+    if not evaluacion:
+        raise HTTPException(status_code=404, detail="Evaluación no encontrada")
     
-    # Obtener datos antropométricos
-    dato_antro = db.query(DatoAntropometrico).filter(
-        DatoAntropometrico.seguimiento_id == followup_id
-    ).first()
-    
-    # Obtener exámenes
-    examen = db.query(Examen).filter(
-        Examen.seguimiento_id == followup_id
-    ).first()
-    
-    return FollowupOut(
-        id_seguimiento=seguimiento.id_seguimiento,
-        infante_id=seguimiento.infante_id,
-        fecha=seguimiento.fecha,
-        observacion=seguimiento.observacion,
-        peso=float(dato_antro.peso) if dato_antro and dato_antro.peso else None,
-        estatura=float(dato_antro.estatura) if dato_antro and dato_antro.estatura else None,
-        imc=float(dato_antro.imc) if dato_antro and dato_antro.imc else None,
-        circunferencia_braquial=float(dato_antro.circunferencia_braquial) if dato_antro and dato_antro.circunferencia_braquial else None,
-        perimetro_cefalico=float(dato_antro.perimetro_cefalico) if dato_antro and dato_antro.perimetro_cefalico else None,
-        pliegue_cutaneo=float(dato_antro.pliegue_cutaneo) if dato_antro and dato_antro.pliegue_cutaneo else None,
-        perimetro_abdominal=float(dato_antro.perimetro_abdominal) if dato_antro and dato_antro.perimetro_abdominal else None,
-        hemoglobina=float(examen.hemoglobina) if examen and examen.hemoglobina else None,
-        foto_ojo_url=None
-    )
+    return {
+        "assessment": {
+            "bmi": float(evaluacion.imc) if evaluacion.imc else None,
+            "weight_for_age_zscore": float(evaluacion.peso_edad_zscore) if evaluacion.peso_edad_zscore else None,
+            "height_for_age_zscore": float(evaluacion.talla_edad_zscore) if evaluacion.talla_edad_zscore else None,
+            "bmi_for_age_zscore": float(evaluacion.imc_edad_zscore) if evaluacion.imc_edad_zscore else None,
+            "head_circumference_zscore": float(evaluacion.perimetro_cefalico_zscore) if evaluacion.perimetro_cefalico_zscore else None,
+            "triceps_skinfold_zscore": float(evaluacion.pliegue_triceps_zscore) if evaluacion.pliegue_triceps_zscore else None,
+            "subscapular_skinfold_zscore": float(evaluacion.pliegue_subescapular_zscore) if evaluacion.pliegue_subescapular_zscore else None,
+            "nutritional_status": {
+                "peso_edad": evaluacion.clasificacion_peso_edad,
+                "talla_edad": evaluacion.clasificacion_talla_edad,
+                "peso_talla": evaluacion.clasificacion_peso_talla,
+                "imc_edad": evaluacion.clasificacion_imc_edad,
+                "perimetro_cefalico_edad": evaluacion.clasificacion_perimetro_cefalico,
+                "pliegue_triceps": evaluacion.clasificacion_pliegue_triceps,
+                "pliegue_subescapular": evaluacion.clasificacion_pliegue_subescapular
+            },
+            "risk_level": evaluacion.nivel_riesgo
+        },
+        "energy_requirements": evaluacion.requerimientos_energeticos,
+        "nutrient_requirements": evaluacion.requerimientos_nutrientes,
+        "recommendations": {
+            "nutritional_recommendations": evaluacion.recomendaciones_nutricionales,
+            "general_recommendations": evaluacion.recomendaciones_generales,
+            "caregiver_instructions": evaluacion.instrucciones_cuidador
+        }
+    }
 
 
-@router.delete("/{followup_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_followup(followup_id: int, db: Session = Depends(get_db)):
+@router.get("/infante/{infante_id}/historial")
+def get_historial_evaluaciones(infante_id: int, db: Session = Depends(get_db)):
     """
-    Elimina un seguimiento (CASCADE eliminará datos antropométricos y exámenes)
+    Obtiene el historial completo de evaluaciones de un infante
+    para mostrar en el perfil y generar estadísticas
     """
-    seguimiento = db.query(Seguimiento).filter(
-        Seguimiento.id_seguimiento == followup_id
+    from sqlalchemy import desc
+    
+    evaluaciones = db.query(
+        EvaluacionNutricional,
+        Seguimiento,
+        DatoAntropometrico
+    ).join(
+        Seguimiento, EvaluacionNutricional.seguimiento_id == Seguimiento.id_seguimiento
+    ).join(
+        DatoAntropometrico, Seguimiento.id_seguimiento == DatoAntropometrico.seguimiento_id
+    ).filter(
+        Seguimiento.infante_id == infante_id
+    ).order_by(
+        desc(Seguimiento.fecha)
+    ).all()
+    
+    historial = []
+    for eval, seg, datos in evaluaciones:
+        historial.append({
+            "id_seguimiento": seg.id_seguimiento,
+            "fecha": seg.fecha,
+            "nivel_riesgo": eval.nivel_riesgo,
+            "peso": float(datos.peso) if datos.peso else None,
+            "estatura": float(datos.estatura) if datos.estatura else None,
+            "imc": float(eval.imc) if eval.imc else None,
+            "clasificaciones": {
+                "peso_edad": eval.clasificacion_peso_edad,
+                "talla_edad": eval.clasificacion_talla_edad,
+                "imc_edad": eval.clasificacion_imc_edad
+            },
+            "zscores": {
+                "peso_edad": float(eval.peso_edad_zscore) if eval.peso_edad_zscore else None,
+                "talla_edad": float(eval.talla_edad_zscore) if eval.talla_edad_zscore else None,
+                "imc_edad": float(eval.imc_edad_zscore) if eval.imc_edad_zscore else None
+            }
+        })
+    
+    return historial
+
+
+@router.get("/estadisticas/dashboard")
+def get_estadisticas_dashboard(db: Session = Depends(get_db)):
+    """
+    Obtiene estadísticas agregadas para el dashboard principal
+    """
+    from sqlalchemy import func, distinct
+    
+    # Total de infantes evaluados
+    total_infantes = db.query(func.count(distinct(Seguimiento.infante_id))).scalar()
+    
+    # Distribución por nivel de riesgo
+    distribucion_riesgo = db.query(
+        EvaluacionNutricional.nivel_riesgo,
+        func.count(distinct(Seguimiento.infante_id))
+    ).join(
+        Seguimiento, EvaluacionNutricional.seguimiento_id == Seguimiento.id_seguimiento
+    ).group_by(
+        EvaluacionNutricional.nivel_riesgo
+    ).all()
+    
+    # Promedios de indicadores
+    promedios = db.query(
+        func.avg(EvaluacionNutricional.peso_edad_zscore).label('promedio_peso_edad'),
+        func.avg(EvaluacionNutricional.talla_edad_zscore).label('promedio_talla_edad'),
+        func.avg(EvaluacionNutricional.imc_edad_zscore).label('promedio_imc_edad')
     ).first()
     
-    if not seguimiento:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Seguimiento con id {followup_id} no encontrado"
-        )
-    
-    db.delete(seguimiento)
-    db.commit()
+    return {
+        "total_infantes": total_infantes,
+        "distribucion_riesgo": {nivel: count for nivel, count in distribucion_riesgo},
+        "promedios_zscores": {
+            "peso_edad": float(promedios.promedio_peso_edad) if promedios.promedio_peso_edad else 0,
+            "talla_edad": float(promedios.promedio_talla_edad) if promedios.promedio_talla_edad else 0,
+            "imc_edad": float(promedios.promedio_imc_edad) if promedios.promedio_imc_edad else 0
+        }
+    }

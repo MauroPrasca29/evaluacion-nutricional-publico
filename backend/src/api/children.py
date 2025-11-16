@@ -1,3 +1,5 @@
+# backend/src/api/children.py
+
 from typing import List, Optional
 from datetime import date
 from fastapi import APIRouter, HTTPException, Query, Depends, status
@@ -204,13 +206,14 @@ def delete_child(
     return None
 
 
-@router.get("/{child_id}/seguimientos", response_model=List[dict])
+@router.get("/{child_id}/followups")
 def get_child_followups(
     child_id: int,
     db: Session = Depends(get_db)
 ):
+
     """
-    Obtiene todos los seguimientos de un infante específico
+    Obtiene todos los seguimientos de un infante específico con datos antropométricos
     """
     child = db.query(Infante).filter(Infante.id_infante == child_id).first()
     
@@ -220,18 +223,44 @@ def get_child_followups(
             detail=f"Infante con id {child_id} no encontrado"
         )
     
-    # Obtener seguimientos relacionados
-    from src.db.models import Seguimiento
+    # Obtener seguimientos con datos antropométricos
+    from src.db.models import Seguimiento, DatoAntropometrico
+    from sqlalchemy.orm import joinedload
+    
+    # CAMBIO: Ordenar por ID descendente en lugar de fecha
     seguimientos = db.query(Seguimiento).filter(
         Seguimiento.infante_id == child_id
-    ).all()
+    ).order_by(Seguimiento.id_seguimiento.desc()).all()
     
-    return [
-        {
-            "id_seguimiento": s.id_seguimiento,
-            "fecha": s.fecha,
-            "observacion": s.observacion,
-            "encargado_id": s.encargado_id
+    result = []
+    for seg in seguimientos:
+        # Obtener datos antropométricos del seguimiento
+        datos_antropo = db.query(DatoAntropometrico).filter(
+            DatoAntropometrico.seguimiento_id == seg.id_seguimiento
+        ).first()
+        
+        seguimiento_data = {
+            "id_seguimiento": seg.id_seguimiento,
+            "fecha": seg.fecha.isoformat() if seg.fecha else None,
+            "observacion": seg.observacion,
+            "encargado_id": seg.encargado_id,
+            "peso": float(datos_antropo.peso) if datos_antropo and datos_antropo.peso else None,
+            "estatura": float(datos_antropo.estatura) if datos_antropo and datos_antropo.estatura else None,
+            "imc": float(datos_antropo.imc) if datos_antropo and datos_antropo.imc else None,
         }
-        for s in seguimientos
-    ]
+        result.append(seguimiento_data)
+    
+    return result
+
+
+# Mantener el endpoint antiguo por compatibilidad
+@router.get("/{child_id}/seguimientos", response_model=List[dict])
+def get_child_seguimientos(
+    child_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Obtiene todos los seguimientos de un infante específico (endpoint de compatibilidad)
+    Redirige a /followups
+    """
+    return get_child_followups(child_id, db)

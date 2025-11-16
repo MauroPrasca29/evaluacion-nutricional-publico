@@ -222,3 +222,53 @@ class Alerta(Base):
     fecha_creacion = Column(DateTime(timezone=True), server_default=func.now())
     fecha_resuelta = Column(DateTime(timezone=True))
 
+
+# ==================================
+# Tabla: Evaluaciones Nutricionales
+# ==================================
+class EvaluacionNutricional(Base):
+    """
+    Almacena los resultados completos de la evaluación nutricional
+    para consultas posteriores y estadísticas
+    """
+    __tablename__ = "evaluaciones_nutricionales"
+
+    id_evaluacion = Column(Integer, primary_key=True, index=True)
+    seguimiento_id = Column(Integer, ForeignKey("seguimientos.id_seguimiento"), unique=True)
+    
+    # Datos antropométricos calculados
+    imc = Column(DECIMAL(5, 2))
+    
+    # Z-scores
+    peso_edad_zscore = Column(DECIMAL(5, 2))
+    talla_edad_zscore = Column(DECIMAL(5, 2))
+    imc_edad_zscore = Column(DECIMAL(5, 2))
+    perimetro_cefalico_zscore = Column(DECIMAL(5, 2))
+    pliegue_triceps_zscore = Column(DECIMAL(5, 2))
+    pliegue_subescapular_zscore = Column(DECIMAL(5, 2))
+    
+    # Clasificaciones nutricionales
+    clasificacion_peso_edad = Column(String(50))
+    clasificacion_talla_edad = Column(String(50))
+    clasificacion_peso_talla = Column(String(50))
+    clasificacion_imc_edad = Column(String(50))
+    clasificacion_perimetro_cefalico = Column(String(50))
+    clasificacion_pliegue_triceps = Column(String(50))
+    clasificacion_pliegue_subescapular = Column(String(50))
+    
+    # Nivel de riesgo (Bajo, Medio, Alto)
+    nivel_riesgo = Column(String(20), nullable=False, index=True)
+    
+    # Requerimientos energéticos y nutricionales (JSON)
+    requerimientos_energeticos = Column(JSON)  # {total_energy_kcal, per_kg_kcal, etc}
+    requerimientos_nutrientes = Column(JSON)   # Lista de nutrientes con valores recomendados
+    
+    # Recomendaciones (JSON)
+    recomendaciones_nutricionales = Column(JSON)  # Lista de recomendaciones
+    recomendaciones_generales = Column(JSON)
+    instrucciones_cuidador = Column(JSON)
+    
+    # Metadata
+    fecha_evaluacion = Column(DateTime(timezone=True), server_default=func.now())
+    
+    seguimiento = relationship("Seguimiento", backref="evaluacion_nutricional")
