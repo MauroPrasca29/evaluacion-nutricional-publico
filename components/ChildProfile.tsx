@@ -1,3 +1,5 @@
+// components/ChildProfile.tsx
+
 "use client"
 import { useState, useEffect } from "react"
 import { ArrowLeft, User, FileText, TrendingUp, Calendar, Phone, Weight, Stethoscope, ClipboardList, AlertTriangle, Download, HeartPulse, Apple, Bike, Loader2 } from 'lucide-react'
@@ -8,7 +10,8 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { GrowthChart } from "@/components/GrowthChart"
-import type { Child, ThemeColors } from "@/types"
+import { FollowUpResults } from "@/components/FollowUpResults"
+import type { Child, ThemeColors, FollowUpForm } from "@/types"
 
 interface ChildProfileProps {
   child: Child
@@ -41,12 +44,19 @@ interface AcudienteData {
   direccion: string | null
 }
 
+interface SelectedSeguimiento {
+  child: Child
+  followUpData: FollowUpForm
+  seguimientoId: number
+}
+
 export function ChildProfile({ child, theme, onBack }: ChildProfileProps) {
   const [activeTab, setActiveTab] = useState("general")
   const [seguimientos, setSeguimientos] = useState<Seguimiento[]>([])
   const [sede, setSede] = useState<SedeData | null>(null)
   const [acudiente, setAcudiente] = useState<AcudienteData | null>(null)
   const [loading, setLoading] = useState(true)
+  const [selectedSeguimiento, setSelectedSeguimiento] = useState<SelectedSeguimiento | null>(null)
 
   const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000"
 
@@ -58,12 +68,14 @@ export function ChildProfile({ child, theme, onBack }: ChildProfileProps) {
         const followupsRes = await fetch(`${apiBase}/api/children/${child.id}/followups`)
         if (followupsRes.ok) {
           const data = await followupsRes.json()
+          console.log("Seguimientos recibidos:", data)
           setSeguimientos(data)
+        } else {
+          console.error("Error al cargar seguimientos:", followupsRes.status)
         }
 
         // Cargar información de sede si existe
         if (child.community && child.community !== "N/A") {
-          // Si ya tenemos el ID de sede, cargarlo
           const sedeId = parseInt(child.community)
           if (!isNaN(sedeId)) {
             const sedeRes = await fetch(`${apiBase}/api/sedes/${sedeId}`)
@@ -94,6 +106,21 @@ export function ChildProfile({ child, theme, onBack }: ChildProfileProps) {
 
     loadChildData()
   }, [child.id, child.community, child.guardian, apiBase])
+
+  // Si hay un seguimiento seleccionado, mostrar los resultados
+  if (selectedSeguimiento) {
+    return (
+      <FollowUpResults
+        child={selectedSeguimiento.child}
+        followUpData={selectedSeguimiento.followUpData}
+        theme={theme}
+        onClose={() => setSelectedSeguimiento(null)}
+        onSaveToProfile={() => {
+          setSelectedSeguimiento(null)
+        }}
+      />
+    )
+  }
 
   const calculateAge = (birthDate: string) => {
     const today = new Date()
@@ -132,10 +159,13 @@ export function ChildProfile({ child, theme, onBack }: ChildProfileProps) {
       return { peso: 0, estatura: 0, imc: 0 }
     }
     
-    // Ordenar por fecha y tomar el más reciente
-    const latest = [...seguimientos].sort((a, b) => 
-      new Date(b.fecha).getTime() - new Date(a.fecha).getTime()
-    )[0]
+    console.log("Calculando última medición de:", seguimientos) // DEBUG
+    
+    // El backend ya envía ordenado por fecha descendente
+    // Tomamos el primer elemento que es el más reciente
+    const latest = seguimientos[0]
+    
+    console.log("Seguimiento más reciente:", latest) // DEBUG
     
     return {
       peso: latest.peso || 0,
@@ -155,7 +185,7 @@ export function ChildProfile({ child, theme, onBack }: ChildProfileProps) {
       height: s.estatura || 0,
       bmi: s.imc || parseFloat(calculateBMI(s.peso || 0, s.estatura || 0))
     }))
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()) // Orden ascendente para el gráfico
 
   return (
     <div className="space-y-6">
@@ -345,55 +375,112 @@ export function ChildProfile({ child, theme, onBack }: ChildProfileProps) {
                 </div>
               ) : seguimientos.length > 0 ? (
                 <Accordion type="single" collapsible className="w-full">
-                  {seguimientos
-                    .sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())
-                    .map((seguimiento) => (
-                      <AccordionItem value={`item-${seguimiento.id_seguimiento}`} key={seguimiento.id_seguimiento}>
-                        <AccordionTrigger className="hover:bg-slate-50 -mx-4 px-4 rounded-md">
-                          <div className="flex justify-between items-center w-full">
-                            <div className="flex items-center gap-4">
-                              <Calendar className="w-5 h-5 text-slate-500" />
-                              <span className="font-bold text-slate-700 text-lg">{formatDate(seguimiento.fecha)}</span>
-                            </div>
-                            {seguimiento.peso && (
-                              <Badge className="bg-green-100 text-green-800">
-                                {seguimiento.peso} kg • {seguimiento.estatura} cm
-                              </Badge>
-                            )}
+                  {seguimientos.map((seguimiento) => (
+                    <AccordionItem value={`item-${seguimiento.id_seguimiento}`} key={seguimiento.id_seguimiento}>
+                      <AccordionTrigger className="hover:bg-slate-50 -mx-4 px-4 rounded-md">
+                        <div className="flex justify-between items-center w-full">
+                          <div className="flex items-center gap-4">
+                            <Calendar className="w-5 h-5 text-slate-500" />
+                            <span className="font-bold text-slate-700 text-lg">{formatDate(seguimiento.fecha)}</span>
                           </div>
-                        </AccordionTrigger>
-                        <AccordionContent className="pt-4 pb-2 space-y-6">
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div className="space-y-4">
-                              <h4 className="font-bold text-slate-700 flex items-center gap-2">
-                                <Stethoscope className="w-5 h-5 text-blue-500" />
-                                Datos Antropométricos
-                              </h4>
-                              <div className="text-sm space-y-2 pl-7">
-                                {seguimiento.peso ? (
-                                  <>
-                                    <p><strong>Peso:</strong> {seguimiento.peso} kg</p>
-                                    <p><strong>Estatura:</strong> {seguimiento.estatura} cm</p>
-                                    <p><strong>IMC:</strong> {seguimiento.imc?.toFixed(1) || calculateBMI(seguimiento.peso, seguimiento.estatura || 0)}</p>
-                                  </>
-                                ) : (
-                                  <p className="text-slate-500">Sin mediciones antropométricas registradas</p>
-                                )}
-                              </div>
-                            </div>
-                            <div className="space-y-4">
-                              <h4 className="font-bold text-slate-700 flex items-center gap-2">
-                                <ClipboardList className="w-5 h-5 text-blue-500" />
-                                Observaciones
-                              </h4>
-                              <p className="text-sm text-slate-600 pl-7">
-                                {seguimiento.observacion || "Sin observaciones registradas"}
-                              </p>
+                          {seguimiento.peso && (
+                            <Badge className="bg-green-100 text-green-800">
+                              {seguimiento.peso} kg • {seguimiento.estatura} cm
+                            </Badge>
+                          )}
+                        </div>
+                      </AccordionTrigger>
+                      <AccordionContent className="pt-4 pb-2 space-y-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <div className="space-y-4">
+                            <h4 className="font-bold text-slate-700 flex items-center gap-2">
+                              <Stethoscope className="w-5 h-5 text-blue-500" />
+                              Datos Antropométricos
+                            </h4>
+                            <div className="text-sm space-y-2 pl-7">
+                              {seguimiento.peso ? (
+                                <>
+                                  <p><strong>Peso:</strong> {seguimiento.peso} kg</p>
+                                  <p><strong>Estatura:</strong> {seguimiento.estatura} cm</p>
+                                  <p><strong>IMC:</strong> {seguimiento.imc?.toFixed(1) || calculateBMI(seguimiento.peso, seguimiento.estatura || 0)}</p>
+                                </>
+                              ) : (
+                                <p className="text-slate-500">Sin mediciones antropométricas registradas</p>
+                              )}
                             </div>
                           </div>
-                        </AccordionContent>
-                      </AccordionItem>
-                    ))}
+                          <div className="space-y-4">
+                            <h4 className="font-bold text-slate-700 flex items-center gap-2">
+                              <ClipboardList className="w-5 h-5 text-blue-500" />
+                              Observaciones
+                            </h4>
+                            <p className="text-sm text-slate-600 pl-7">
+                              {seguimiento.observacion || "Sin observaciones registradas"}
+                            </p>
+                          </div>
+                        </div>
+                        
+                        {/* Botón para ver resultados completos */}
+                        <div className="flex justify-center pt-4 border-t">
+                          <Button
+                            onClick={() => {
+                              // Guardar el ID del seguimiento para cargar los resultados
+                              sessionStorage.setItem('last_seguimiento_id', seguimiento.id_seguimiento.toString())
+                              // Crear un objeto Child temporal para pasar a FollowUpResults
+                              const tempChild: Child = {
+                                id: child.id,
+                                name: child.name,
+                                age: calculateAge(child.birthDate),
+                                gender: child.gender,
+                                birthDate: child.birthDate,
+                                community: child.community,
+                                guardian: child.guardian,
+                                phone: child.phone || "N/A",
+                                address: child.address || "N/A",
+                                status: "normal",
+                                lastCheckup: seguimiento.fecha,
+                                weight: seguimiento.peso || 0,
+                                height: seguimiento.estatura || 0,
+                                bmi: seguimiento.imc || 0,
+                              }
+                              
+                              // Crear datos de seguimiento temporales
+                              const tempFollowUpData = {
+                                childId: parseInt(child.id),
+                                weight: seguimiento.peso?.toString() || "",
+                                height: seguimiento.estatura?.toString() || "",
+                                armCircumference: "",
+                                headCircumference: "",
+                                tricepsFold: "",
+                                abdominalPerimeter: "",
+                                symptoms: [],
+                                physicalSigns: [],
+                                clinicalObservations: seguimiento.observacion || "",
+                                hemoglobin: "",
+                                stoolExam: "",
+                                urineExam: "",
+                                eyePhotos: [],
+                                gumPhotos: [],
+                                caregiverComments: "",
+                              }
+                              
+                              // Aquí podrías abrir un modal o navegar a los resultados
+                              // Por ahora, vamos a usar el componente FollowUpResults
+                              setSelectedSeguimiento({
+                                child: tempChild,
+                                followUpData: tempFollowUpData,
+                                seguimientoId: seguimiento.id_seguimiento
+                              })
+                            }}
+                            className={`bg-gradient-to-r ${theme.buttonColor} text-white hover:scale-105 transition-transform`}
+                          >
+                            <FileText className="w-4 h-4 mr-2" />
+                            Ver Evaluación Nutricional Completa
+                          </Button>
+                        </div>
+                      </AccordionContent>
+                    </AccordionItem>
+                  ))}
                 </Accordion>
               ) : (
                 <div className="text-center py-10">

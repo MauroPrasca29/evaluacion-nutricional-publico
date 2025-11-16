@@ -168,7 +168,7 @@ export function NewFollowUpForm({ theme }: NewFollowUpFormProps) {
     return observaciones
   }
 
-    const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
     if (!selectedChild) {
@@ -183,23 +183,24 @@ export function NewFollowUpForm({ theme }: NewFollowUpFormProps) {
       
       const observacionesClinicas = getObservacionesClinicas()
       
-  const seguimientoData = {
-    infante_id: formData.childId, // Usar formData.childId en lugar de selectedChild.id_infante
-    fecha: new Date().toISOString().split('T')[0],
-    observacion: formData.clinicalObservations || "",
-    observaciones_clinicas: observacionesClinicas,
-    peso: parseFloat(formData.weight) || null,
-    estatura: parseFloat(formData.height) || null,
-    circunferencia_braquial: parseFloat(formData.armCircumference) || null,
-    perimetro_cefalico: parseFloat(formData.headCircumference) || null,
-    pliegue_cutaneo: parseFloat(formData.tricepsFold) || null,
-    perimetro_abdominal: parseFloat(formData.abdominalPerimeter) || null,
-    hemoglobina: parseFloat(formData.hemoglobin) || null,
-    foto_ojo_url: null
-  }
+      const seguimientoData = {
+        infante_id: formData.childId,
+        fecha: new Date().toISOString().split('T')[0],
+        observacion: formData.clinicalObservations || "",
+        observaciones_clinicas: observacionesClinicas,
+        peso: parseFloat(formData.weight) || null,
+        estatura: parseFloat(formData.height) || null,
+        circunferencia_braquial: parseFloat(formData.armCircumference) || null,
+        perimetro_cefalico: parseFloat(formData.headCircumference) || null,
+        pliegue_cutaneo: parseFloat(formData.tricepsFold) || null,
+        perimetro_abdominal: parseFloat(formData.abdominalPerimeter) || null,
+        hemoglobina: parseFloat(formData.hemoglobin) || null,
+        foto_ojo_url: null
+      }
 
-  console.log("Enviando seguimiento:", seguimientoData)
-  console.log("ID del infante:", formData.childId) // Para debug
+      console.log("Enviando seguimiento:", seguimientoData)
+      console.log("ID del infante:", formData.childId)
+      
       const response = await fetch(`${apiBase}/api/followups/`, {
         method: 'POST',
         headers: {
@@ -211,6 +212,9 @@ export function NewFollowUpForm({ theme }: NewFollowUpFormProps) {
       if (response.ok) {
         const result = await response.json()
         console.log("Seguimiento creado exitosamente:", result)
+        
+        // **LÍNEA IMPORTANTE: Guardar el ID del seguimiento**
+        sessionStorage.setItem('last_seguimiento_id', result.id_seguimiento.toString())
         
         toast.success("¡Seguimiento registrado exitosamente!", {
           description: `ID del seguimiento: ${result.id_seguimiento}`,
@@ -323,9 +327,6 @@ export function NewFollowUpForm({ theme }: NewFollowUpFormProps) {
                         </p>
                       </div>
                     </div>
-                    <Badge className="bg-blue-100 text-blue-800">
-                      ID: {child.id_infante}
-                    </Badge>
                   </div>
                 ))}
               </div>
