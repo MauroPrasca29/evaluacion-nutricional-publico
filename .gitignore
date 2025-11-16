@@ -220,3 +220,5 @@ settings.local.py
 
 # Temporary files
 *.temp
+backend/models/*.onnx
+backend/models/*.pth
