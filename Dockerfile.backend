@@ -29,6 +29,14 @@ COPY ../backend/requirements.txt .
 RUN pip install --upgrade pip setuptools wheel && \
     pip install --no-cache-dir -r requirements.txt
 
+# Copiar script de descarga de modelos
+COPY ../backend/scripts/download_models.py ./scripts/download_models.py
+
+# Descargar modelos ONNX en tiempo de build (si es posible)
+RUN mkdir -p /app/models && \
+    python ./scripts/download_models.py --models-dir /app/models || \
+    echo "⚠️  Descarga de modelos en build fallida o IDs no configurados. Se intentará en startup."
+
 
 # ===========================
 # STAGE 2 — Production image
@@ -64,9 +72,10 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 # Copiar código fuente del backend
 COPY ../backend/src /app/src
 COPY ../backend/main.py /app/main.py
+COPY ../backend/scripts /app/scripts
 
 # Crear carpetas necesarias
-RUN mkdir -p uploads logs && \
+RUN mkdir -p uploads logs models && \
     chown -R appuser:appuser /app
 
 # === IMPORTANTE ===

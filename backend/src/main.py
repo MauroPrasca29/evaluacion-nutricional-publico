@@ -2,6 +2,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import importlib
 import logging
+import os
+import sys
+import subprocess
 
 from src.api import auth as auth_router
 from src.api import children as children_router
@@ -14,6 +17,49 @@ from src.api import vision_anemia_onnx as anemia_router
 
 logger = logging.getLogger("nutritional-api")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+
+# ===== DESCARGA AUTOMÁTICA DE MODELOS ONNX =====
+def ensure_anemia_models():
+    """Verifica y descarga modelos ONNX si no existen."""
+    models_dir = os.path.join(os.getcwd(), "models")
+    required_models = [
+        "hb_regressor_infants_ft.onnx",
+        "hb_regressor_infants_ft.pth"
+    ]
+    
+    missing_models = [m for m in required_models if not os.path.exists(os.path.join(models_dir, m))]
+    
+    if missing_models:
+        logger.warning(f"⚠️  Modelos faltantes: {missing_models}")
+        logger.info("📥 Intentando descargar modelos ONNX...")
+        
+        # Ubicación del script de descarga
+        download_script = os.path.join(os.path.dirname(__file__), "..", "scripts", "download_models.py")
+        
+        if os.path.exists(download_script):
+            try:
+                result = subprocess.run(
+                    [sys.executable, download_script, "--models-dir", models_dir],
+                    capture_output=True,
+                    text=True,
+                    timeout=600  # 10 minutos máximo
+                )
+                logger.info(result.stdout)
+                if result.returncode != 0:
+                    logger.error(f"❌ Error descargando modelos: {result.stderr}")
+                else:
+                    logger.info("✅ Modelos descargados exitosamente.")
+            except subprocess.TimeoutExpired:
+                logger.error("❌ Timeout descargando modelos. Continuar sin modelos.")
+            except Exception as e:
+                logger.error(f"❌ Error ejecutando script de descarga: {e}")
+        else:
+            logger.warning(f"⚠️  Script de descarga no encontrado en {download_script}")
+    else:
+        logger.info(f"✅ Todos los modelos ONNX están presentes.")
+
+# Ejecutar descarga de modelos antes de crear la app
+ensure_anemia_models()
 
 app = FastAPI(
     title="Nutritional Assessment API",
