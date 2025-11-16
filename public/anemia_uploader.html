@@ -1,0 +1,62 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Anemia Uploader</title>
+</head>
+<body>
+  <h1>Subir imagen para detección de anemia</h1>
+  <form id="uploadForm">
+    <input type="file" id="fileInput" accept="image/*" required />
+    <input type="number" id="age" placeholder="Edad en meses" required />
+    <button type="submit">Subir</button>
+  </form>
+  <progress id="progress" value="0" max="100" style="width:300px; display:none"></progress>
+  <pre id="result"></pre>
+
+  <script>
+    const form = document.getElementById('uploadForm');
+    const input = document.getElementById('fileInput');
+    const ageInput = document.getElementById('age');
+    const progress = document.getElementById('progress');
+    const result = document.getElementById('result');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const file = input.files[0];
+      if (!file) return alert('Selecciona un archivo');
+      const age = ageInput.value;
+
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('age_months', age);
+
+      progress.style.display = 'block';
+      progress.value = 0;
+
+      try {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/api/vision/anemia');
+        xhr.upload.onprogress = (ev) => {
+          if (ev.lengthComputable) {
+            const pct = Math.round((ev.loaded / ev.total) * 100);
+            progress.value = pct;
+          }
+        };
+        xhr.onload = () => {
+          result.textContent = xhr.responseText;
+          progress.style.display = 'none';
+        };
+        xhr.onerror = () => {
+          result.textContent = 'Error en la subida';
+          progress.style.display = 'none';
+        };
+        xhr.send(formData);
+      } catch (err) {
+        result.textContent = err.toString();
+        progress.style.display = 'none';
+      }
+    });
+  </script>
+</body>
+</html>

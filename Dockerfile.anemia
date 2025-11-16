@@ -1,0 +1,34 @@
+# Dockerfile.anemia - Servicio de detección de anemia con ONNX Runtime
+
+FROM python:3.12-slim
+
+# Variables para que no intente usar terminal interactiva
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# Crear directorio de la app
+WORKDIR /app
+
+# Instalar dependencias del sistema necesarias para opencv
+RUN apt-get update && apt-get install -y \
+    libglib2.0-0 libsm6 libxext6 libxrender1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copiar requirements e instalar
+COPY backend/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Crear carpeta para el modelo
+RUN mkdir -p /app/models
+
+# Copiar el modelo ONNX
+COPY backend/models/hb_regressor_infants_ft.onnx /app/models/hb_regressor_infants_ft.onnx
+
+# Copiar el código del servicio
+COPY backend/src/api/vision_anemia_onnx.py /app/vision_anemia_onnx.py
+
+# Exponer puerto
+EXPOSE 8000
+
+# Comando por defecto: lanzar FastAPI con uvicorn
+CMD ["uvicorn", "vision_anemia_onnx:app", "--host", "0.0.0.0", "--port", "8000"]

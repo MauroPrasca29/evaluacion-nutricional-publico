@@ -93,6 +93,7 @@ import_excel_router = _try_import_router(["api.import_excel", "src.api.import_ex
 nutrition_router    = _try_import_router(["api.nutrition", "src.api.nutrition"])
 sedes_router = _try_import_router(["api.sedes", "src.api.sedes"])
 acudientes_router = _try_import_router(["api.acudientes", "src.api.acudientes"])
+anemia_router = _try_import_router(["api.vision_anemia_onnx", "src.api.vision_anemia_onnx"])
 
 # ---------- Lifespan ----------
 @asynccontextmanager
@@ -191,6 +192,8 @@ if sedes_router:
     app.include_router(sedes_router, prefix="/api/sedes", tags=["sedes"])
 if acudientes_router:
     app.include_router(acudientes_router, prefix="/api/acudientes", tags=["acudientes"])
+if anemia_router:
+    app.include_router(anemia_router, prefix="/api/vision", tags=["vision"])
 # ---------- Manejadores globales ----------
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):

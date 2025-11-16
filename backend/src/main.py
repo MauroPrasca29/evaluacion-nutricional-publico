@@ -9,6 +9,7 @@ from src.api import followups as followups_router
 from src.api import reports as reports_router
 from src.api import import_excel as import_router
 from src.api import nutrition as nutrition_router
+from src.api import vision_anemia_onnx as anemia_router
 
 
 logger = logging.getLogger("nutritional-api")
@@ -56,3 +57,7 @@ app.include_router(import_router.router, prefix="/api/import")
 logger.info("Router cargado: api.import_excel")
 
 app.include_router(nutrition_router.router, prefix="/api/nutrition")
+logger.info("Router cargado: api.nutrition")
+
+app.include_router(anemia_router.router, prefix="/api/vision")
+logger.info("Router cargado: api.vision_anemia_onnx")
