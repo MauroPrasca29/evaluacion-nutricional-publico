@@ -1,5 +1,6 @@
 "use client"
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { AppSidebar } from "@/components/AppSidebar"
 import { AppHeader } from "@/components/AppHeader"
 import { Dashboard } from "@/components/Dashboard"
@@ -12,6 +13,7 @@ import { getThemeColors } from "@/utils/theme"
 import type { NewChildForm as NewChildFormType } from "@/types"
 
 export default function NutritionalAssessmentApp() {
+  const router = useRouter()
   const [currentView, setCurrentView] = useState("dashboard")
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [showNewChildForm, setShowNewChildForm] = useState(false)
@@ -51,6 +53,17 @@ export default function NutritionalAssessmentApp() {
         return <Dashboard theme={theme} onNewChild={handleNewChild} onNavigate={handleNavigate} />
     }
   }
+  useEffect(() => {
+    try {
+      const token = localStorage.getItem("token")
+      if (!token) {
+        router.push("/login")
+      }
+    } catch (e) {
+      // si ocurre algún error de acceso a localStorage, redirigimos igualmente
+      router.push("/login")
+    }
+  }, [router])
 
   return (
     <div className={`min-h-screen bg-gradient-to-br ${theme.gradient} transition-all duration-700`}>

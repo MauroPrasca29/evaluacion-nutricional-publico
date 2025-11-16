@@ -13,7 +13,23 @@ from core.config import settings
 from db.session import get_db
 
 # Password hashing
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+def _build_pwd_context():
+    """Attempt to build a password context using bcrypt, falling back to
+    pbkdf2_sha256 if bcrypt is unavailable or raises errors in this env.
+    This allows the application to run in environments where binary bcrypt
+    wheels are not available while still preferring bcrypt when possible.
+    """
+    try:
+        ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
+        # quick dry-run to confirm backend works
+        ctx.hash("test")
+        return ctx
+    except Exception:
+        # fallback
+        return CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
+
+
+pwd_context = _build_pwd_context()
 
 # JWT token security
 security = HTTPBearer()

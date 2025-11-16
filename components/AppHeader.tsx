@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { Bell, Menu, Settings, LogOut, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -21,8 +22,14 @@ interface AppHeaderProps {
 }
 
 export function AppHeader({ theme, setSidebarOpen }: AppHeaderProps) {
+  const router = useRouter()
   const [showNotifications, setShowNotifications] = useState(false)
   const [showProfile, setShowProfile] = useState(false)
+
+  const handleLogout = () => {
+    localStorage.removeItem("token")
+    router.push("/login")
+  }
 
   return (
     <>
@@ -83,7 +90,10 @@ export function AppHeader({ theme, setSidebarOpen }: AppHeaderProps) {
                   Configuración
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem className="text-red-600 hover:bg-red-50">
+                <DropdownMenuItem 
+                  className="text-red-600 hover:bg-red-50 cursor-pointer"
+                  onClick={handleLogout}
+                >
                   <LogOut className="w-4 h-4 mr-3" />
                   Cerrar Sesión
                 </DropdownMenuItem>

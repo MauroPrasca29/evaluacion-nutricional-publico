@@ -76,7 +76,21 @@ def _create_engine():
             echo=getattr(settings, "DEBUG", False),
             future=True,  # API 2.x
         )
-        logger.info(f"✅ Database engine created successfully → {db_url}")
+        # Log a masked DB URL (hide credentials) to avoid confusion about which DB is used
+        try:
+            from urllib.parse import urlparse
+
+            parsed = urlparse(db_url)
+            # Build a masked representation: scheme://user:***@host:port/db
+            user = parsed.username or ""
+            host = parsed.hostname or ""
+            port = f":{parsed.port}" if parsed.port else ""
+            path = parsed.path or ""
+            masked = f"{parsed.scheme}://{user}:***@{host}{port}{path}"
+        except Exception:
+            masked = "<unparsable-db-url>"
+
+        logger.info(f"✅ Database engine created successfully → {masked}")
         return engine
     except Exception as e:
         logger.error(f"❌ Error creating database engine: {e}")

@@ -11,33 +11,29 @@ Registro de usuarios, login con JWT y perfil (/me).
 - Hash: passlib (bcrypt) con normalización a 72 bytes
 """
 
-from datetime import datetime, timedelta
-import os
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
-from passlib.context import CryptContext
-from jose import JWTError, jwt
+
+from jose import JWTError
 
 from src.db.session import get_db
 from src.db.models import Usuario
 from src.db.schemas import UsuarioCreate, UsuarioResponse
 
+# Reuse central security helpers and settings for consistent hashing/JWT
+from core.security import get_password_hash, verify_password, create_access_token, verify_token
+from core.config import settings
+
 # ------------------------------------------------------------
 # Configuración
 # ------------------------------------------------------------
-# Estos valores vienen del .env; se usan defaults seguros si no están.
-SECRET_KEY = os.getenv("SECRET_KEY", "supersecretkey")
-ALGORITHM = os.getenv("ALGORITHM", "HS256")
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
-
 # IMPORTANT: el tokenUrl debe coincidir con el prefijo que pone main.py
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 router = APIRouter(tags=["auth"])  # el prefijo /api/auth lo añade main.py
 
@@ -45,33 +41,7 @@ router = APIRouter(tags=["auth"])  # el prefijo /api/auth lo añade main.py
 # ------------------------------------------------------------
 # Utilidades de password y JWT
 # ------------------------------------------------------------
-def _bcrypt_normalize(password: str) -> str:
-    """
-    Bcrypt solo usa los primeros 72 bytes.
-    Normalizamos a utf-8, truncamos a 72 bytes y devolvemos str.
-    """
-    if not isinstance(password, str):
-        raise ValueError("La contraseña debe ser texto.")
-    pw_bytes = password.strip().encode("utf-8")
-    if len(pw_bytes) > 72:
-        pw_bytes = pw_bytes[:72]
-    return pw_bytes.decode("utf-8", "ignore")
-
-
-def get_password_hash(password: str) -> str:
-    return pwd_context.hash(_bcrypt_normalize(password))
-
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(_bcrypt_normalize(plain_password), hashed_password)
-
-
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
-    to_encode = data.copy()
-    now = datetime.utcnow()
-    expire = now + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
-    to_encode.update({"iat": now, "exp": expire})
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+router = APIRouter(tags=["auth"])  # el prefijo /api/auth lo añade main.py
 
 
 # ------------------------------------------------------------
@@ -147,7 +117,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Credenciales inválidas")
 
     token = create_access_token({"sub": user.correo, "uid": user.id_usuario})
-    return TokenResponse(access_token=token, expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60)
+    return TokenResponse(access_token=token, expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60)
 
 
 # ------------------------------------------------------------
@@ -165,7 +135,7 @@ def token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
         raise HTTPException(status_code=401, detail="Credenciales inválidas")
 
     token = create_access_token({"sub": user.correo, "uid": user.id_usuario})
-    return TokenResponse(access_token=token, expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60)
+    return TokenResponse(access_token=token, expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60)
 
 
 # ------------------------------------------------------------
@@ -177,12 +147,12 @@ def _get_current_user(db: Session, token: str) -> Usuario:
         detail="No autenticado o token inválido",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        correo: str = payload.get("sub")  # email del usuario
-        if correo is None:
-            raise credentials_exception
-    except JWTError:
+    payload = verify_token(token, token_type="access")
+    if payload is None:
+        raise credentials_exception
+
+    correo: str = payload.get("sub")
+    if correo is None:
         raise credentials_exception
 
     user = db.query(Usuario).filter(Usuario.correo == correo).first()
