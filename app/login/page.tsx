@@ -15,19 +15,17 @@ export default function LoginPage() {
     setError("")
 
     try {
-      const form = new URLSearchParams()
-      form.append("username", correo)
-      form.append("password", contrasena)
+      // Send request to local auth endpoint (simplified endpoint, no proxy layer)
+      const loginUrl = `/api/auth-login`
+      console.log('Login: using endpoint ->', loginUrl)
 
-      // use getApiBase from the shared helper (handles previews & local dev)
-      // Send request to local proxy to avoid CORS in previews
-      const proxyUrl = `/api/proxy/api/auth/token`
-      console.log('Login: using proxy ->', proxyUrl)
-
-      const res = await fetch(proxyUrl, {
+      const res = await fetch(loginUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: form.toString(),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          correo: correo,
+          contrasena: contrasena,
+        }),
       })
 
       if (!res.ok) {

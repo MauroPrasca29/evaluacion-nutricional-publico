@@ -16,9 +16,7 @@ export default function RegisterPage() {
     setLoading(true)
     setError("")
     try {
-      const proxyUrl = `/api/proxy/api/auth/register`
-      console.log('Register: using proxy ->', proxyUrl)
-      const res = await fetch(`${proxyUrl}`, {
+      const res = await fetch(`/api/auth-register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ nombre, correo, telefono, contrasena }),
