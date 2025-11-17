@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { Bell, Menu, Settings, LogOut, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -20,9 +21,78 @@ interface AppHeaderProps {
   setSidebarOpen: (open: boolean) => void
 }
 
+interface UserData {
+  id_usuario: number
+  nombre: string
+  correo: string
+  telefono: string
+  rol_id?: number | null
+  rol_nombre?: string | null
+  es_admin?: boolean
+}
+
 export function AppHeader({ theme, setSidebarOpen }: AppHeaderProps) {
+  const router = useRouter()
   const [showNotifications, setShowNotifications] = useState(false)
   const [showProfile, setShowProfile] = useState(false)
+  const [userData, setUserData] = useState<UserData | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    // Obtener datos del usuario autenticado
+    const fetchUserData = async () => {
+      try {
+        const token = localStorage.getItem("token")
+        if (!token) {
+          router.push("/login")
+          return
+        }
+
+        // Usar el endpoint proxy de Next.js para evitar problemas de CORS
+        const response = await fetch("/api/auth-me", {
+          headers: {
+            "Authorization": `Bearer ${token}`
+          }
+        })
+
+        if (response.ok) {
+          const data = await response.json()
+          setUserData(data)
+        } else {
+          // Token inválido o expirado
+          localStorage.removeItem("token")
+          document.cookie = "token=; path=/; max-age=0"
+          router.push("/login")
+        }
+      } catch (error) {
+        console.error("Error fetching user data:", error)
+        // Si hay error de red, no redirigir inmediatamente
+        setLoading(false)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchUserData()
+  }, [router])
+
+  const handleLogout = () => {
+    // Limpiar token de localStorage y cookies
+    localStorage.removeItem("token")
+    document.cookie = "token=; path=/; max-age=0"
+    // Redirigir a login
+    router.push("/login")
+  }
+
+  // Función para obtener las iniciales del nombre
+  const getInitials = (name: string) => {
+    return name
+      .split(" ")
+      .map(word => word[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 2)
+  }
 
   return (
     <>
@@ -63,13 +133,20 @@ export function AppHeader({ theme, setSidebarOpen }: AppHeaderProps) {
                 <Button
                   variant="ghost"
                   className="flex items-center gap-3 px-3 py-2 hover:bg-white/20 rounded-xl text-white"
+                  disabled={loading}
                 >
                   <Avatar className="w-8 h-8">
-                    <AvatarFallback className="bg-white/20 text-white font-bold text-sm">DR</AvatarFallback>
+                    <AvatarFallback className="bg-white/20 text-white font-bold text-sm">
+                      {userData ? getInitials(userData.nombre) : "..."}
+                    </AvatarFallback>
                   </Avatar>
                   <div className="text-left hidden sm:block">
-                    <p className="text-sm font-bold text-white">Dra. Rosa Martínez</p>
-                    <p className="text-xs text-white/80">Nutricionista</p>
+                    <p className="text-sm font-bold text-white">
+                      {userData ? userData.nombre : "Cargando..."}
+                    </p>
+                    <p className="text-xs text-white/80">
+                      {userData ? userData.correo : ""}
+                    </p>
                   </div>
                 </Button>
               </DropdownMenuTrigger>
@@ -83,7 +160,7 @@ export function AppHeader({ theme, setSidebarOpen }: AppHeaderProps) {
                   Configuración
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem className="text-red-600 hover:bg-red-50">
+                <DropdownMenuItem className="text-red-600 hover:bg-red-50 cursor-pointer" onClick={handleLogout}>
                   <LogOut className="w-4 h-4 mr-3" />
                   Cerrar Sesión
                 </DropdownMenuItem>
@@ -95,7 +172,7 @@ export function AppHeader({ theme, setSidebarOpen }: AppHeaderProps) {
 
       {/* Panels */}
       <NotificationPanel isOpen={showNotifications} onClose={() => setShowNotifications(false)} />
-      <UserProfile isOpen={showProfile} onClose={() => setShowProfile(false)} />
+      <UserProfile isOpen={showProfile} onClose={() => setShowProfile(false)} userData={userData} />
     </>
   )
 }

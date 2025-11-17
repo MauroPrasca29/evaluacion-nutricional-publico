@@ -19,13 +19,22 @@ if not MODEL_PATH:
             MODEL_PATH = p
             break
 
-if not MODEL_PATH:
-    raise RuntimeError(f"No se encontró el modelo ONNX. Intenté: {POSSIBLE_PATHS}")
+# Cargar sesión ONNX solo si el modelo existe
+session = None
+input_name = None
+output_name = None
 
-# Cargar sesión ONNX
-session = ort.InferenceSession(MODEL_PATH, providers=["CPUExecutionProvider"])
-input_name = session.get_inputs()[0].name
-output_name = session.get_outputs()[0].name
+if MODEL_PATH:
+    try:
+        session = ort.InferenceSession(MODEL_PATH, providers=["CPUExecutionProvider"])
+        input_name = session.get_inputs()[0].name
+        output_name = session.get_outputs()[0].name
+        print(f"✅ Modelo ONNX cargado: {MODEL_PATH}")
+    except Exception as e:
+        print(f"⚠️  Error cargando modelo ONNX: {e}")
+        session = None
+else:
+    print(f"⚠️  Modelo ONNX no disponible. Los endpoints de anemia no funcionarán.")
 
 # Umbrales
 OFFSET_SMALL = 1.00
@@ -69,6 +78,9 @@ def preprocess_256(img_rgb: np.ndarray) -> np.ndarray:
 
 
 def predict_hb_from_bytes(img_bytes: bytes) -> float:
+    if session is None:
+        raise RuntimeError("Modelo ONNX no disponible. No se puede realizar la predicción.")
+    
     pil_img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
     img_rgb = np.array(pil_img)
     img = preprocess_256(img_rgb)

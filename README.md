@@ -1,8 +1,8 @@
 # Sistema de Evaluación Nutricional Infantil
 
-Sistema completo para la evaluación y seguimiento nutricional de niños, desarrollado con Next.js, FastAPI y PostgreSQL.
+Sistema completo para la evaluación y seguimiento nutricional de niños, desarrollado con Next.js 15, FastAPI y PostgreSQL.
 
-## 🚀 Inicio Rápido con Docker
+## 🚀 Inicio Rápido con Docker (3 pasos)
 
 ### Prerrequisitos
 - Docker y Docker Compose instalados
@@ -11,43 +11,54 @@ Sistema completo para la evaluación y seguimiento nutricional de niños, desarr
 ### Instalación
 
 1. **Clonar el repositorio**
-\`\`\`bash
-git clone <repository-url>
-cd nutricional-infantil
-\`\`\`
+```bash
+git clone https://github.com/MauroPrasca29/evaluacion-nutricional-publico.git
+cd evaluacion-nutricional-publico
+```
 
-2. **Levantar los servicios**
-\`\`\`bash
-cd infra
+2. **Levantar todos los servicios**
+```bash
 docker-compose up -d
-\`\`\`
+```
 
-3. **Verificar que los servicios estén funcionando**
-\`\`\`bash
-docker-compose ps
-\`\`\`
+3. **Verificar que todo funcione**
+```bash
+./verify-system.sh
+```
+
+¡Eso es todo! El sistema se configura automáticamente con:
+- ✅ Base de datos PostgreSQL con tablas creadas
+- ✅ Usuario administrador listo para usar
+- ✅ Backend y Frontend corriendo
+- ✅ Datos de ejemplo cargados
 
 ### 🌐 Servicios Disponibles
 
-- **Frontend (Next.js)**: http://localhost:3000
-- **Backend API (FastAPI)**: http://localhost:8000
-- **API Documentation**: http://localhost:8000/docs
-- **Nginx Proxy**: http://localhost:80
-- **PostgreSQL**: localhost:5432
+| Servicio | Puerto | URL |
+|----------|--------|-----|
+| **Frontend** | 3000 | http://localhost:3000 |
+| **Backend API** | 8000 | http://localhost:8000 |
+| **API Docs** | 8000 | http://localhost:8000/docs |
+| **PostgreSQL** | 5432 | localhost:5432 |
+| **Redis** | 6379 | localhost:6379 |
 
-### 📊 Credenciales por Defecto
+### 🔑 Credenciales por Defecto
 
-### Credenciales iniciales
-Las credenciales de administración se crean mediante un proceso de seed o manualmente en tu entorno.
-**No se incluyen credenciales por defecto en el repositorio.**
-Configura tus variables a partir de los archivos `.env.example`.
+**Administrador:**
+- Email: `admin@example.com`
+- Password: `admin123`
 
+**Usuario Normal:**
+- Email: `user@example.com`
+- Password: `user123`
 
 **Base de Datos:**
-- Host: localhost:5432
-- Database: nutritional_db
-- User: postgres
-- Password: nutritional_password_2024
+- Host: `localhost:5432`
+- Database: `nutricion_db`
+- User: `postgres`
+- Password: `nutricion2024`
+
+> ⚠️ **IMPORTANTE:** Cambiar estas credenciales en producción editando el archivo `.env`
 
 ## 🛠️ Desarrollo Local
 

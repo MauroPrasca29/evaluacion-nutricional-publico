@@ -66,8 +66,7 @@ export function NewChildForm({ theme, onClose, onSave }: NewChildFormProps) {
   useEffect(() => {
     const fetchSedes = async () => {
       try {
-        const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000"
-        const response = await fetch(`${apiBase}/api/sedes/`)
+        const response = await fetch(`/api/sedes`)
         
         if (response.ok) {
           const data = await response.json()
@@ -89,10 +88,9 @@ export function NewChildForm({ theme, onClose, onSave }: NewChildFormProps) {
   useEffect(() => {
     const fetchAcudientes = async () => {
       try {
-        const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000"
         const url = searchAcudiente 
-          ? `${apiBase}/api/acudientes/?search=${encodeURIComponent(searchAcudiente)}`
-          : `${apiBase}/api/acudientes/`
+          ? `/api/acudientes?search=${encodeURIComponent(searchAcudiente)}`
+          : `/api/acudientes`
         
         const response = await fetch(url)
         
@@ -124,8 +122,7 @@ export function NewChildForm({ theme, onClose, onSave }: NewChildFormProps) {
     setSavingAcudiente(true)
     
     try {
-      const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000"
-      const response = await fetch(`${apiBase}/api/acudientes/`, {
+      const response = await fetch(`/api/acudientes`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -178,8 +175,7 @@ export function NewChildForm({ theme, onClose, onSave }: NewChildFormProps) {
     };
 
     try {
-      const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000"
-      const response = await fetch(`${apiBase}/api/children/`, {
+      const response = await fetch(`/api/children`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

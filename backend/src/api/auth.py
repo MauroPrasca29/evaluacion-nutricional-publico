@@ -13,7 +13,7 @@ Registro de usuarios, login con JWT y perfil (/me).
 
 from datetime import datetime, timedelta
 import os
-from typing import Optional
+from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -93,16 +93,28 @@ class MeResponse(BaseModel):
     nombre: str
     correo: EmailStr
     telefono: str
+    rol_id: Optional[int] = None
+    rol_nombre: Optional[str] = None
+    es_admin: bool = False
 
 
 # ------------------------------------------------------------
 # Registro
 # ------------------------------------------------------------
 @router.post("/register", response_model=UsuarioResponse, status_code=status.HTTP_201_CREATED)
-def register(usuario: UsuarioCreate, db: Session = Depends(get_db)):
+def register(
+    usuario: UsuarioCreate,
+    db: Session = Depends(get_db),
+    token: str = Depends(oauth2_scheme)
+):
     """
     Registra un nuevo usuario.
+    Solo disponible para administradores.
     """
+    # Verificar que quien crea el usuario sea admin
+    current_user = _get_current_user(db, token)
+    _require_admin(current_user)
+    
     # Validar duplicados
     if db.query(Usuario).filter(Usuario.correo == usuario.correo).first():
         raise HTTPException(status_code=400, detail="El correo ya está registrado")
@@ -191,6 +203,18 @@ def _get_current_user(db: Session, token: str) -> Usuario:
     return user
 
 
+def _require_admin(user: Usuario) -> None:
+    """
+    Verifica que el usuario tenga rol de administrador.
+    Lanza HTTPException 403 si no es admin.
+    """
+    if not user.rol or user.rol.nombre != "Administrador":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acceso denegado. Solo administradores pueden realizar esta acción."
+        )
+
+
 @router.get("/me", response_model=MeResponse)
 def me(db: Session = Depends(get_db), token: str = Depends(oauth2_scheme)):
     user = _get_current_user(db, token)
@@ -199,4 +223,303 @@ def me(db: Session = Depends(get_db), token: str = Depends(oauth2_scheme)):
         nombre=user.nombre,
         correo=user.correo,
         telefono=user.telefono,
+        rol_id=user.rol_id,
+        rol_nombre=user.rol.nombre if user.rol else None,
+        es_admin=user.rol.nombre == "Administrador" if user.rol else False,
     )
+
+
+# ------------------------------------------------------------
+# Actualizar perfil del usuario
+# ------------------------------------------------------------
+class UpdateProfileRequest(BaseModel):
+    nombre: Optional[str] = None
+    telefono: Optional[str] = None
+
+
+@router.put("/me", response_model=MeResponse)
+def update_profile(
+    profile_data: UpdateProfileRequest,
+    db: Session = Depends(get_db),
+    token: str = Depends(oauth2_scheme)
+):
+    """
+    Actualiza el perfil del usuario autenticado.
+    Solo se actualizan los campos proporcionados.
+    """
+    user = _get_current_user(db, token)
+    
+    # Actualizar solo los campos proporcionados
+    if profile_data.nombre is not None:
+        user.nombre = profile_data.nombre
+    
+    if profile_data.telefono is not None:
+        # Validar que el teléfono no esté en uso por otro usuario
+        existing = db.query(Usuario).filter(
+            Usuario.telefono == profile_data.telefono,
+            Usuario.id_usuario != user.id_usuario
+        ).first()
+        if existing:
+            raise HTTPException(status_code=400, detail="El teléfono ya está en uso")
+        user.telefono = profile_data.telefono
+    
+    user.fecha_actualizado = datetime.utcnow()
+    db.commit()
+    db.refresh(user)
+    
+    return MeResponse(
+        id_usuario=user.id_usuario,
+        nombre=user.nombre,
+        correo=user.correo,
+        telefono=user.telefono,
+    )
+
+
+# ------------------------------------------------------------
+# Cambiar contraseña
+# ------------------------------------------------------------
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
+@router.post("/change-password")
+def change_password(
+    password_data: ChangePasswordRequest,
+    db: Session = Depends(get_db),
+    token: str = Depends(oauth2_scheme)
+):
+    """
+    Cambia la contraseña del usuario autenticado.
+    Requiere la contraseña actual para validación.
+    """
+    user = _get_current_user(db, token)
+    
+    # Verificar contraseña actual
+    if not verify_password(password_data.current_password, user.contrasena):
+        raise HTTPException(status_code=400, detail="Contraseña actual incorrecta")
+    
+    # Actualizar contraseña
+    user.contrasena = get_password_hash(password_data.new_password)
+    user.fecha_actualizado = datetime.utcnow()
+    db.commit()
+    
+    return {"message": "Contraseña actualizada exitosamente"}
+
+
+# ------------------------------------------------------------
+# Listar todos los usuarios (solo admin)
+# ------------------------------------------------------------
+class UsuarioListResponse(BaseModel):
+    id_usuario: int
+    nombre: str
+    correo: EmailStr
+    telefono: str
+    rol_id: Optional[int] = None
+    fecha_creado: datetime
+    fecha_actualizado: datetime
+
+    class Config:
+        orm_mode = True
+
+
+@router.get("/users", response_model=List[UsuarioListResponse])
+def list_users(
+    db: Session = Depends(get_db),
+    token: str = Depends(oauth2_scheme),
+    skip: int = 0,
+    limit: int = 100
+):
+    """
+    Lista todos los usuarios del sistema.
+    Solo disponible para administradores.
+    """
+    current_user = _get_current_user(db, token)
+    
+    # Verificar que el usuario actual sea admin
+    _require_admin(current_user)
+    
+    usuarios = db.query(Usuario).offset(skip).limit(limit).all()
+    return usuarios
+
+
+# ------------------------------------------------------------
+# Restablecer contraseña de un usuario (admin)
+# ------------------------------------------------------------
+class ResetPasswordRequest(BaseModel):
+    new_password: str
+
+
+@router.post("/users/{user_id}/reset-password")
+def reset_user_password(
+    user_id: int,
+    password_data: ResetPasswordRequest,
+    db: Session = Depends(get_db),
+    token: str = Depends(oauth2_scheme)
+):
+    """
+    Restablece la contraseña de un usuario específico.
+    Solo disponible para administradores.
+    """
+    # Validar que el usuario actual esté autenticado
+    current_user = _get_current_user(db, token)
+    
+    # Verificar que el usuario actual sea admin
+    _require_admin(current_user)
+    
+    # Buscar el usuario a modificar
+    target_user = db.query(Usuario).filter(Usuario.id_usuario == user_id).first()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    
+    # No permitir que un usuario se restablezca a sí mismo usando este endpoint
+    if target_user.id_usuario == current_user.id_usuario:
+        raise HTTPException(
+            status_code=400,
+            detail="Use el endpoint /change-password para cambiar su propia contraseña"
+        )
+    
+    # Actualizar contraseña
+    target_user.contrasena = get_password_hash(password_data.new_password)
+    target_user.fecha_actualizado = datetime.utcnow()
+    db.commit()
+    
+    return {
+        "message": f"Contraseña restablecida exitosamente para {target_user.nombre}",
+        "usuario_id": target_user.id_usuario,
+        "usuario_nombre": target_user.nombre
+    }
+
+
+# ------------------------------------------------------------
+# Listar todos los roles disponibles
+# ------------------------------------------------------------
+class RolResponse(BaseModel):
+    id_rol: int
+    nombre: str
+    descripcion: Optional[str] = None
+
+    class Config:
+        orm_mode = True
+
+
+@router.get("/roles", response_model=List[RolResponse])
+def list_roles(
+    db: Session = Depends(get_db),
+    token: str = Depends(oauth2_scheme)
+):
+    """
+    Lista todos los roles disponibles en el sistema.
+    Disponible para usuarios autenticados.
+    """
+    _get_current_user(db, token)  # Solo validar que esté autenticado
+    
+    from src.db.models import Rol
+    roles = db.query(Rol).all()
+    return roles
+
+
+# ------------------------------------------------------------
+# Actualizar usuario (admin)
+# ------------------------------------------------------------
+class UpdateUserRequest(BaseModel):
+    nombre: Optional[str] = None
+    telefono: Optional[str] = None
+    rol_id: Optional[int] = None
+
+
+@router.put("/users/{user_id}", response_model=UsuarioListResponse)
+def update_user(
+    user_id: int,
+    user_data: UpdateUserRequest,
+    db: Session = Depends(get_db),
+    token: str = Depends(oauth2_scheme)
+):
+    """
+    Actualiza los datos de un usuario específico.
+    Solo disponible para administradores.
+    """
+    # Validar que el usuario actual esté autenticado
+    current_user = _get_current_user(db, token)
+    
+    # Verificar que el usuario actual sea admin
+    _require_admin(current_user)
+    
+    # Buscar el usuario a modificar
+    target_user = db.query(Usuario).filter(Usuario.id_usuario == user_id).first()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    
+    # Actualizar campos proporcionados
+    if user_data.nombre is not None:
+        target_user.nombre = user_data.nombre
+    
+    if user_data.telefono is not None:
+        # Validar que el teléfono no esté en uso por otro usuario
+        existing = db.query(Usuario).filter(
+            Usuario.telefono == user_data.telefono,
+            Usuario.id_usuario != user_id
+        ).first()
+        if existing:
+            raise HTTPException(status_code=400, detail="El teléfono ya está en uso")
+        target_user.telefono = user_data.telefono
+    
+    if user_data.rol_id is not None:
+        # Validar que el rol exista
+        from src.db.models import Rol
+        rol = db.query(Rol).filter(Rol.id_rol == user_data.rol_id).first()
+        if not rol:
+            raise HTTPException(status_code=404, detail="Rol no encontrado")
+        target_user.rol_id = user_data.rol_id
+    
+    target_user.fecha_actualizado = datetime.utcnow()
+    db.commit()
+    db.refresh(target_user)
+    
+    return target_user
+
+
+# ------------------------------------------------------------
+# Eliminar usuario (admin)
+# ------------------------------------------------------------
+@router.delete("/users/{user_id}")
+def delete_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    token: str = Depends(oauth2_scheme)
+):
+    """
+    Elimina un usuario del sistema.
+    Solo disponible para administradores.
+    No se puede eliminar a sí mismo.
+    """
+    # Validar que el usuario actual esté autenticado
+    current_user = _get_current_user(db, token)
+    
+    # Verificar que el usuario actual sea admin
+    _require_admin(current_user)
+    
+    # Buscar el usuario a eliminar
+    target_user = db.query(Usuario).filter(Usuario.id_usuario == user_id).first()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    
+    # No permitir que un admin se elimine a sí mismo
+    if target_user.id_usuario == current_user.id_usuario:
+        raise HTTPException(
+            status_code=400,
+            detail="No puede eliminarse a sí mismo"
+        )
+    
+    # Guardar información antes de eliminar
+    user_name = target_user.nombre
+    user_email = target_user.correo
+    
+    # Eliminar el usuario
+    db.delete(target_user)
+    db.commit()
+    
+    return {
+        "message": f"Usuario {user_name} ({user_email}) eliminado exitosamente",
+        "usuario_id": user_id
+    }

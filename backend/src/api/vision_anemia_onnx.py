@@ -50,9 +50,10 @@ if not MODEL_PATH:
             break
 
 if not MODEL_PATH:
-    raise RuntimeError(f"No se encontró el modelo ONNX. Intenté: {POSSIBLE_PATHS}")
-
-print(f"🔍 Usando modelo ONNX: {MODEL_PATH}")
+    print(f"⚠️  ADVERTENCIA: No se encontró el modelo ONNX. Intenté: {POSSIBLE_PATHS}")
+    print(f"⚠️  El endpoint de anemia no estará disponible hasta que se cargue el modelo.")
+else:
+    print(f"🔍 Usando modelo ONNX: {MODEL_PATH}")
 
 # umbrales ajustados que encontraste en el notebook
 OFFSET_SMALL = 1.00   # 6–59 meses

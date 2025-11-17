@@ -13,6 +13,8 @@ from src.api import reports as reports_router
 from src.api import import_excel as import_router
 from src.api import nutrition as nutrition_router
 from src.api import vision_anemia_onnx as anemia_router
+from src.api import sedes as sedes_router
+from src.api import acudientes as acudientes_router
 
 
 logger = logging.getLogger("nutritional-api")
@@ -107,3 +109,9 @@ logger.info("Router cargado: api.nutrition")
 
 app.include_router(anemia_router.router, prefix="/api/vision")
 logger.info("Router cargado: api.vision_anemia_onnx")
+
+app.include_router(sedes_router.router, prefix="/api/sedes")
+logger.info("Router cargado: api.sedes")
+
+app.include_router(acudientes_router.router, prefix="/api/acudientes")
+logger.info("Router cargado: api.acudientes")

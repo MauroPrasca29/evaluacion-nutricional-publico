@@ -50,8 +50,10 @@ export default function LoginPage() {
       }
 
       const data = await res.json()
-      // Guardar token y redirigir
+      // Guardar token en localStorage y cookies
       localStorage.setItem("token", data.access_token)
+      // Guardar también en cookie para que el middleware lo pueda leer
+      document.cookie = `token=${data.access_token}; path=/; max-age=3600; SameSite=Lax`
       router.push("/")
     } catch (err) {
       setError("Error de conexión")
@@ -99,14 +101,8 @@ export default function LoginPage() {
           </div>
         </form>
 
-        <div className="mt-4 text-center text-sm text-gray-600">
-          ¿No tienes cuenta?{" "}
-          <button
-            onClick={() => router.push("/register")}
-            className="text-blue-600 hover:underline font-medium"
-          >
-            Crear una aquí
-          </button>
+        <div className="mt-4 text-center text-sm text-gray-500">
+          🔒 Acceso solo para usuarios autorizados
         </div>
       </div>
     </div>

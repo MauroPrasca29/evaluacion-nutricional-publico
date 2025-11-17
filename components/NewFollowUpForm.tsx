@@ -54,13 +54,11 @@ export function NewFollowUpForm({ theme }: NewFollowUpFormProps) {
     caregiverComments: "",
   })
 
-  const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000"
-
   // Cargar infantes desde la API
   useEffect(() => {
     const fetchChildren = async () => {
       try {
-        const response = await fetch(`${apiBase}/api/children/`)
+        const response = await fetch(`/api/children`)
         if (response.ok) {
           const data = await response.json()
           setChildren(data)
@@ -75,7 +73,7 @@ export function NewFollowUpForm({ theme }: NewFollowUpFormProps) {
     }
 
     fetchChildren()
-  }, [apiBase])
+  }, [])
 
   const filteredChildren = children.filter((child) => 
     child.nombre.toLowerCase().includes(searchTerm.toLowerCase())
@@ -179,8 +177,6 @@ export function NewFollowUpForm({ theme }: NewFollowUpFormProps) {
     }
 
     try {
-      const apiBase = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8000'
-      
       const observacionesClinicas = getObservacionesClinicas()
       
       const seguimientoData = {
@@ -201,7 +197,7 @@ export function NewFollowUpForm({ theme }: NewFollowUpFormProps) {
       console.log("Enviando seguimiento:", seguimientoData)
       console.log("ID del infante:", formData.childId)
       
-      const response = await fetch(`${apiBase}/api/followups/`, {
+      const response = await fetch(`/api/followups`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

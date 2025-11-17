@@ -1,37 +1,148 @@
 services:
-  backend:
-    build: ./backend
-    container_name: backend_nutricion
-    env_file:
-      - .env
+  # ===== BASE DE DATOS =====
+  db:
+    image: postgres:15-alpine
+    container_name: nutricion_db
+    restart: unless-stopped
     environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nutricion2024}
+      POSTGRES_DB: ${POSTGRES_DB:-nutricion_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+      - ./database/seeds.sql:/docker-entrypoint-initdb.d/02-seeds.sql
+    networks:
+      - nutricion_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ===== REDIS (para tareas asíncronas) =====
+  redis:
+    image: redis:7-alpine
+    container_name: nutricion_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    networks:
+      - nutricion_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # ===== BACKEND (FastAPI) =====
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: nutricion_backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:nutricion2024@db:5432/nutricion_db
+      SECRET_KEY: ${SECRET_KEY:-tu_clave_secreta_super_segura}
+      ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: 60
+      REDIS_URL: redis://redis:6379/0
       ANEMIA_ASYNC: "true"
+      PYTHONPATH: /app
     ports:
       - "8000:8000"
     volumes:
       - ./backend:/app
+      - ./backend/uploads:/app/uploads
       - ./backend/models:/app/models
-      - ./backend/uploads:/tmp/uploads
+      - ./backend/logs:/app/logs
+    networks:
+      - nutricion_network
     command: >
-      sh -c "uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
-  redis:
-    image: redis:7
-    container_name: redis_anemia
-    ports:
-      - "6379:6379"
+      sh -c "
+        echo '🔄 Esperando base de datos...' &&
+        sleep 5 &&
+        echo '📊 Creando tablas...' &&
+        python create_tables.py &&
+        echo '👤 Configurando usuario admin...' &&
+        python ensure_admin.py &&
+        echo '🚀 Iniciando servidor...' &&
+        uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+      "
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
+  # ===== CELERY WORKER (tareas asíncronas) =====
   celery_worker:
-    build: ./backend
-    container_name: celery_anemia_worker
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: nutricion_celery
+    restart: unless-stopped
     depends_on:
       - redis
       - backend
+    environment:
+      DATABASE_URL: postgresql://postgres:nutricion2024@db:5432/nutricion_db
+      REDIS_URL: redis://redis:6379/0
+      ANEMIA_ASYNC: "true"
+      PYTHONPATH: /app
     volumes:
       - ./backend:/app
-      - ./backend/uploads:/tmp/uploads
-    environment:
-      REDIS_URL: "redis://redis:6379/0"
-      ANEMIA_ASYNC: "true"
+      - ./backend/uploads:/app/uploads
+      - ./backend/models:/app/models
+    networks:
+      - nutricion_network
     command: celery -A tasks.celery_app worker --loglevel=info
+
+  # ===== FRONTEND (Next.js) =====
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: nutricion_frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      NEXT_PUBLIC_API_BASE: http://backend:8000
+      BACKEND_BASE: http://backend:8000
+      NODE_ENV: development
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./app:/app/app
+      - ./components:/app/components
+      - ./lib:/app/lib
+      - ./public:/app/public
+      - ./styles:/app/styles
+      - ./types:/app/types
+    networks:
+      - nutricion_network
+    command: npm run dev
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  nutricion_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
 
 

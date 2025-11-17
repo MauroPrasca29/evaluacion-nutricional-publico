@@ -1,31 +1,66 @@
-# Etapa deps
+# ===========================
+# Etapa 1: Instalar dependencias
+# ===========================
 FROM node:18-alpine AS deps
 WORKDIR /app
-COPY package*.json ./
-RUN apk add --no-cache libc6-compat && npm ci
 
-# Etapa build (producción clásica, genera .next)
+# Copiar archivos de dependencias
+COPY package*.json pnpm-lock.yaml* ./
+
+# Instalar pnpm y dependencias
+RUN npm install -g pnpm && \
+    apk add --no-cache libc6-compat && \
+    pnpm install --frozen-lockfile
+
+# ===========================
+# Etapa 2: Build (para producción)
+# ===========================
 FROM node:18-alpine AS builder
 WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
-COPY . .
-RUN npm run build
 
-# Etapa runtime
+# Copiar dependencias instaladas
+COPY --from=deps /app/node_modules ./node_modules
+
+# Copiar todo el código fuente
+COPY . .
+
+# Variables de entorno para el build
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV NODE_ENV=production
+
+# Build de Next.js
+RUN npm install -g pnpm && \
+    pnpm run build
+
+# ===========================
+# Etapa 3: Runtime
+# ===========================
 FROM node:18-alpine AS runner
 WORKDIR /app
 
-# Usuario no-root
-RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
 
-# Copiamos el build "clásico" (NO standalone)
+# Instalar curl para healthcheck
+RUN apk add --no-cache curl
+
+# Crear usuario no-root
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 nextjs
+
+# Instalar pnpm globalmente
+RUN npm install -g pnpm
+
+# Copiar archivos necesarios
 COPY --from=builder --chown=nextjs:nodejs /app/.next ./.next
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
+COPY --from=builder --chown=nextjs:nodejs /app/next.config.* ./
 
-ENV NODE_ENV=production
+USER nextjs
+
 EXPOSE 3000
 
-# Si el compose usa "command: npm run dev", este CMD se ignora.
-# Para prod: descomenta la línea de abajo y quita el 'command' en el compose.
-# CMD ["npx", "next", "start", "-p", "3000"]
+# Comando por defecto (para producción)
+CMD ["pnpm", "start"]

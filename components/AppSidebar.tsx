@@ -1,6 +1,6 @@
 "use client"
 
-import { Home, Users, BarChart3, UserPlus, Upload } from "lucide-react"
+import { Home, Users, BarChart3, UserPlus, Upload, UserCog } from "lucide-react"
 import type { MenuItem } from "@/types"
 
 interface AppSidebarProps {
@@ -8,9 +8,10 @@ interface AppSidebarProps {
   setCurrentView: (view: string) => void
   isOpen: boolean
   setIsOpen: (open: boolean) => void
+  isAdmin?: boolean
 }
 
-export function AppSidebar({ currentView, setCurrentView, isOpen, setIsOpen }: AppSidebarProps) {
+export function AppSidebar({ currentView, setCurrentView, isOpen, setIsOpen, isAdmin = false }: AppSidebarProps) {
   const menuItems: MenuItem[] = [
     {
       id: "dashboard",
@@ -58,6 +59,19 @@ export function AppSidebar({ currentView, setCurrentView, isOpen, setIsOpen }: A
       borderColor: "border-indigo-200",
     },
   ]
+
+  // Solo agregar "Gestión de usuarios" si es admin
+  if (isAdmin) {
+    menuItems.push({
+      id: "users",
+      label: "Gestión de usuarios",
+      icon: UserCog,
+      color: "from-pink-400 to-pink-500",
+      bgColor: "bg-pink-50",
+      hoverColor: "hover:bg-pink-100",
+      borderColor: "border-pink-200",
+    })
+  }
 
   const currentItem = menuItems.find((item) => item.id === currentView) || menuItems[0]
 

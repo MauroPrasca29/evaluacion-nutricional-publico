@@ -157,6 +157,43 @@ def create_followup(followup_data: FollowupCreate, db: Session = Depends(get_db)
         raise HTTPException(status_code=500, detail=f"Error al crear seguimiento: {str(e)}")
 
 
+@router.get("/")
+def list_followups(
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db)
+):
+    """
+    Lista todos los seguimientos con paginación
+    """
+    from src.db.models import Infante, DatoAntropometrico
+    
+    seguimientos = db.query(Seguimiento).order_by(Seguimiento.fecha.desc()).offset(skip).limit(limit).all()
+    
+    result = []
+    for seg in seguimientos:
+        # Obtener datos antropométricos
+        datos_antropo = db.query(DatoAntropometrico).filter(
+            DatoAntropometrico.seguimiento_id == seg.id_seguimiento
+        ).first()
+        
+        # Obtener infante
+        infante = db.query(Infante).filter(Infante.id_infante == seg.infante_id).first()
+        
+        result.append({
+            "id_seguimiento": seg.id_seguimiento,
+            "infante_id": seg.infante_id,
+            "infante_nombre": infante.nombre if infante else None,
+            "fecha": seg.fecha.isoformat() if seg.fecha else None,
+            "observacion": seg.observacion,
+            "peso": float(datos_antropo.peso) if datos_antropo and datos_antropo.peso else None,
+            "estatura": float(datos_antropo.estatura) if datos_antropo and datos_antropo.estatura else None,
+            "imc": float(datos_antropo.imc) if datos_antropo and datos_antropo.imc else None
+        })
+    
+    return result
+
+
 @router.get("/{seguimiento_id}/evaluacion")
 def get_evaluacion_nutricional(seguimiento_id: int, db: Session = Depends(get_db)):
     """

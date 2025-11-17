@@ -38,8 +38,7 @@ export function ChildrenManagement({ theme }: ChildrenManagementProps) {
 
   const fetchChildren = async () => {
     try {
-      const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000"
-      const response = await fetch(`${apiBase}/api/children/`)
+      const response = await fetch('/api/children/')
       
       if (response.ok) {
         const data = await response.json()

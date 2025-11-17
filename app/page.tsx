@@ -1,5 +1,6 @@
 "use client"
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { AppSidebar } from "@/components/AppSidebar"
 import { AppHeader } from "@/components/AppHeader"
 import { Dashboard } from "@/components/Dashboard"
@@ -8,13 +9,42 @@ import { NewFollowUpForm } from "@/components/NewFollowUpForm"
 import { NewChildForm } from "@/components/NewChildForm"
 import { ImportData } from "@/components/ImportData"
 import { AdvancedStatistics } from "@/components/AdvancedStatistics"
+import { UsersManagement } from "@/components/UsersManagement"
 import { getThemeColors } from "@/utils/theme"
 import type { NewChildForm as NewChildFormType } from "@/types"
 
 export default function NutritionalAssessmentApp() {
+  const router = useRouter()
+  const [mounted, setMounted] = useState(false)
   const [currentView, setCurrentView] = useState("dashboard")
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [showNewChildForm, setShowNewChildForm] = useState(false)
+  const [isAdmin, setIsAdmin] = useState(false)
+
+  // Evitar problemas de hidratación
+  useEffect(() => {
+    setMounted(true)
+    // Verificar si hay token y obtener rol del usuario
+    const token = localStorage.getItem("token")
+    if (!token) {
+      router.push("/login")
+      return
+    }
+
+    // Obtener datos del usuario para saber si es admin
+    fetch("/api/auth-me", {
+      headers: {
+        "Authorization": `Bearer ${token}`
+      }
+    })
+      .then(res => res.json())
+      .then(data => {
+        setIsAdmin(data.es_admin || false)
+      })
+      .catch(err => {
+        console.error("Error fetching user data:", err)
+      })
+  }, [router])
 
   const theme = getThemeColors(currentView)
 
@@ -47,9 +77,20 @@ export default function NutritionalAssessmentApp() {
         return <NewFollowUpForm theme={theme} />
       case "import-data":
         return <ImportData theme={theme} />
+      case "users":
+        return <UsersManagement theme={theme} />
       default:
         return <Dashboard theme={theme} onNewChild={handleNewChild} onNavigate={handleNavigate} />
     }
+  }
+
+  // No renderizar nada hasta que el componente esté montado en el cliente
+  if (!mounted) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-100">
+        <div className="text-lg text-gray-600">Cargando...</div>
+      </div>
+    )
   }
 
   return (
@@ -65,6 +106,7 @@ export default function NutritionalAssessmentApp() {
           setCurrentView={setCurrentView}
           isOpen={sidebarOpen}
           setIsOpen={setSidebarOpen}
+          isAdmin={isAdmin}
         />
 
         {/* Main Content */}

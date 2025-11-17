@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { User, Shield, Bell, Save, Camera, Mail, Phone, MapPin } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -15,19 +15,37 @@ import { Badge } from "@/components/ui/badge"
 interface UserProfileProps {
   isOpen: boolean
   onClose: () => void
+  userData?: {
+    id_usuario: number
+    nombre: string
+    correo: string
+    telefono: string
+  } | null
 }
 
-export function UserProfile({ isOpen, onClose }: UserProfileProps) {
+export function UserProfile({ isOpen, onClose, userData }: UserProfileProps) {
   const [profileData, setProfileData] = useState({
-    name: "Dra. Rosa Martínez",
-    email: "rosa.martinez@nutricion.gov.co",
-    phone: "+57 300 123 4567",
-    position: "Nutricionista Clínica",
-    institution: "Centro de Salud Villa Esperanza",
+    name: userData?.nombre || "Cargando...",
+    email: userData?.correo || "",
+    phone: userData?.telefono || "",
+    position: "Nutricionista",
+    institution: "Centro de Salud",
     license: "NUT-2019-001234",
-    address: "Calle 45 #23-67, Villa Esperanza",
-    bio: "Nutricionista especializada en nutrición infantil con 8 años de experiencia en comunidades vulnerables.",
+    address: "Dirección no especificada",
+    bio: "Profesional de la salud dedicado al seguimiento nutricional infantil.",
   })
+
+  // Actualizar profileData cuando userData cambie
+  useEffect(() => {
+    if (userData) {
+      setProfileData(prev => ({
+        ...prev,
+        name: userData.nombre,
+        email: userData.correo,
+        phone: userData.telefono,
+      }))
+    }
+  }, [userData])
 
   const [notifications, setNotifications] = useState({
     emailAlerts: true,
@@ -42,9 +60,93 @@ export function UserProfile({ isOpen, onClose }: UserProfileProps) {
     passwordExpiry: "90",
   })
 
-  const handleSave = () => {
-    alert("Perfil actualizado exitosamente")
-    onClose()
+  const [passwordData, setPasswordData] = useState({
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: "",
+  })
+
+  const [passwordError, setPasswordError] = useState("")
+
+  const handleChangePassword = async () => {
+    setPasswordError("")
+
+    // Validaciones
+    if (!passwordData.currentPassword || !passwordData.newPassword || !passwordData.confirmPassword) {
+      setPasswordError("Todos los campos son requeridos")
+      return
+    }
+
+    if (passwordData.newPassword !== passwordData.confirmPassword) {
+      setPasswordError("Las contraseñas nuevas no coinciden")
+      return
+    }
+
+    if (passwordData.newPassword.length < 8) {
+      setPasswordError("La nueva contraseña debe tener al menos 8 caracteres")
+      return
+    }
+
+    try {
+      const token = localStorage.getItem("token")
+      if (!token) return
+
+      const response = await fetch("/api/auth-change-password", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          current_password: passwordData.currentPassword,
+          new_password: passwordData.newPassword,
+        }),
+      })
+
+      if (response.ok) {
+        alert("Contraseña actualizada exitosamente")
+        setPasswordData({ currentPassword: "", newPassword: "", confirmPassword: "" })
+      } else {
+        const error = await response.json()
+        setPasswordError(error.detail || "No se pudo cambiar la contraseña")
+      }
+    } catch (error) {
+      console.error("Error changing password:", error)
+      setPasswordError("Error al cambiar la contraseña")
+    }
+  }
+
+  const handleSave = async () => {
+    try {
+      const token = localStorage.getItem("token")
+      if (!token) return
+
+      // Actualizar perfil
+      const response = await fetch("/api/auth-update-profile", {
+        method: "PUT",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          nombre: profileData.name,
+          telefono: profileData.phone,
+        }),
+      })
+
+      if (response.ok) {
+        alert("Perfil actualizado exitosamente")
+        onClose()
+        // Recargar la página para reflejar cambios
+        window.location.reload()
+      } else {
+        const error = await response.json()
+        alert(`Error: ${error.detail || "No se pudo actualizar el perfil"}`)
+      }
+    } catch (error) {
+      console.error("Error saving profile:", error)
+      alert("Error al guardar los cambios")
+    }
   }
 
   if (!isOpen) return null
@@ -92,7 +194,7 @@ export function UserProfile({ isOpen, onClose }: UserProfileProps) {
                       <Avatar className="w-24 h-24">
                         <AvatarImage src="/placeholder.svg" alt="Foto de perfil" />
                         <AvatarFallback className="bg-gradient-to-br from-amber-400 to-amber-500 text-white text-xl font-bold">
-                          RM
+                          {userData ? userData.nombre.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2) : "NN"}
                         </AvatarFallback>
                       </Avatar>
                       <Button
@@ -260,17 +362,68 @@ export function UserProfile({ isOpen, onClose }: UserProfileProps) {
             <TabsContent value="security" className="p-6 space-y-6">
               <Card className="border border-slate-200">
                 <CardHeader>
+                  <CardTitle className="text-lg font-semibold text-slate-800">Cambiar Contraseña</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {passwordError && (
+                    <div className="p-3 bg-red-50 border border-red-200 rounded text-red-600 text-sm">
+                      {passwordError}
+                    </div>
+                  )}
+                  <div className="space-y-2">
+                    <Label htmlFor="currentPassword">Contraseña Actual</Label>
+                    <Input
+                      id="currentPassword"
+                      type="password"
+                      value={passwordData.currentPassword}
+                      onChange={(e) => setPasswordData({ ...passwordData, currentPassword: e.target.value })}
+                      className="border-amber-200 focus:border-amber-400"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="newPassword">Nueva Contraseña</Label>
+                    <Input
+                      id="newPassword"
+                      type="password"
+                      value={passwordData.newPassword}
+                      onChange={(e) => setPasswordData({ ...passwordData, newPassword: e.target.value })}
+                      className="border-amber-200 focus:border-amber-400"
+                    />
+                    <p className="text-xs text-slate-500">Mínimo 8 caracteres</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="confirmPassword">Confirmar Nueva Contraseña</Label>
+                    <Input
+                      id="confirmPassword"
+                      type="password"
+                      value={passwordData.confirmPassword}
+                      onChange={(e) => setPasswordData({ ...passwordData, confirmPassword: e.target.value })}
+                      className="border-amber-200 focus:border-amber-400"
+                    />
+                  </div>
+                  <Button
+                    onClick={handleChangePassword}
+                    className="w-full bg-gradient-to-r from-amber-400 to-amber-500 text-white"
+                  >
+                    Cambiar Contraseña
+                  </Button>
+                </CardContent>
+              </Card>
+
+              <Card className="border border-slate-200">
+                <CardHeader>
                   <CardTitle className="text-lg font-semibold text-slate-800">Configuración de Seguridad</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-6">
                   <div className="flex items-center justify-between">
                     <div>
                       <Label className="text-base font-medium">Autenticación de Dos Factores</Label>
-                      <p className="text-sm text-slate-600">Agregar una capa extra de seguridad</p>
+                      <p className="text-sm text-slate-600">Agregar una capa extra de seguridad (Próximamente)</p>
                     </div>
                     <Switch
                       checked={security.twoFactor}
                       onCheckedChange={(checked) => setSecurity({ ...security, twoFactor: checked })}
+                      disabled
                     />
                   </div>
                   <div className="space-y-2">
@@ -281,24 +434,10 @@ export function UserProfile({ isOpen, onClose }: UserProfileProps) {
                       value={security.sessionTimeout}
                       onChange={(e) => setSecurity({ ...security, sessionTimeout: e.target.value })}
                       className="border-amber-200 focus:border-amber-400"
+                      disabled
                     />
+                    <p className="text-xs text-slate-500">Configuración próximamente</p>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="passwordExpiry">Expiración de Contraseña (días)</Label>
-                    <Input
-                      id="passwordExpiry"
-                      type="number"
-                      value={security.passwordExpiry}
-                      onChange={(e) => setSecurity({ ...security, passwordExpiry: e.target.value })}
-                      className="border-amber-200 focus:border-amber-400"
-                    />
-                  </div>
-                  <Button
-                    variant="outline"
-                    className="w-full border-red-200 text-red-600 hover:bg-red-50 bg-transparent"
-                  >
-                    Cambiar Contraseña
-                  </Button>
                 </CardContent>
               </Card>
             </TabsContent>
