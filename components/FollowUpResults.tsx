@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { FileText, Download, AlertTriangle, CheckCircle, User, Loader2 } from "lucide-react"
+import { FileText, Download, AlertTriangle, CheckCircle, User, Loader2, Activity, Scale, Ruler, TrendingUp, AlertCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import type { Child, ThemeColors } from "@/types"
 import { toast } from "sonner"
+import { WHOGrowthChart } from "@/components/WHOGrowthChart"
 
 interface FollowUpResultsProps {
   child: Child
@@ -39,14 +40,21 @@ interface AssessmentData {
     risk_level: string
   }
   energy_requirements: {
-    total_energy_kcal: number
-    per_kg_kcal?: number
+    kcal_per_day?: number
+    kcal_per_kg?: number
+    kcal_per_day_str?: string
+    kcal_per_kg_str?: string
+    source?: string
   }
   nutrient_requirements: any[]
   recommendations: {
     nutritional_recommendations: string[]
     general_recommendations: string[]
     caregiver_instructions: string[]
+  }
+  weight_info?: {
+    current_weight: number
+    expected_weight: number
   }
 }
 
@@ -55,32 +63,30 @@ export function FollowUpResults({ child, followUpData, theme, onClose, onSaveToP
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false)
   const [assessmentData, setAssessmentData] = useState<AssessmentData | null>(null)
   const [loadingAssessment, setLoadingAssessment] = useState(true)
+  const [growthCharts, setGrowthCharts] = useState<{[key: string]: any}>({})
+  const [loadingCharts, setLoadingCharts] = useState(false)
 
-  // **AQUÍ VA EL useEffect - después de declarar los estados**
   useEffect(() => {
-    const fetchEvaluacion = async () => {
-      try {
-        const apiBase = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8000'
-        
-        // Obtener el ID del seguimiento desde sessionStorage
-        const seguimientoId = sessionStorage.getItem('last_seguimiento_id')
-        
-        if (!seguimientoId) {
-          console.error("No hay ID de seguimiento")
-          toast.error("Error", {
-            description: "No se encontró el ID del seguimiento"
-          })
-          setLoadingAssessment(false)
-          return
-        }
-        
-        console.log("Cargando evaluación para seguimiento:", seguimientoId)
-        
-        const response = await fetch(`${apiBase}/api/followups/${seguimientoId}/evaluacion`)
-        
-        if (response.ok) {
-          const data = await response.json()
-          console.log("Evaluación cargada:", data)
+  const fetchEvaluacion = async () => {
+    try {
+      const seguimientoId = sessionStorage.getItem('last_seguimiento_id')
+      
+      if (!seguimientoId) {
+        console.error("No hay ID de seguimiento")
+        toast.error("Error", {
+          description: "No se encontró el ID del seguimiento"
+        })
+        setLoadingAssessment(false)
+        return
+      }
+      
+      console.log("Cargando evaluación para seguimiento:", seguimientoId)
+      
+      const response = await fetch(`/api/followups/${seguimientoId}/evaluacion`)
+      
+      if (response.ok) {
+        const data = await response.json()
+        console.log("Evaluación cargada:", data)
           setAssessmentData(data)
         } else {
           const error = await response.json()
@@ -100,9 +106,111 @@ export function FollowUpResults({ child, followUpData, theme, onClose, onSaveToP
     }
     
     fetchEvaluacion()
-  }, []) // Array vacío para que solo se ejecute una vez al montar
+  }, [])
 
-  // Usar datos reales si están disponibles, sino usar simulados
+  const loadGrowthCharts = async () => {
+    if (Object.keys(growthCharts).length > 0) return
+    
+    setLoadingCharts(true)
+    try {
+      const ageDays = calculateAgeDays(child.birthDate)
+      const gender = child.gender === 'masculino' ? 'male' : 'female'
+      
+      // Calcular edad en años
+      const ageYears = ageDays / 365
+      
+      console.log('=== INICIO CARGA DE GRÁFICAS ===')
+      console.log('Edad:', ageYears, 'años')
+      console.log('followUpData:', followUpData)
+      console.log('assessmentData:', assessmentData)
+      
+      // Gráficas básicas (siempre se muestran)
+      const chartTypes = [
+        { name: 'peso', value: followUpData.weight },
+        { name: 'talla', value: followUpData.height },
+        { name: 'imc', value: assessmentData?.assessment.bmi }
+      ]
+      
+      // Gráficas adicionales solo si edad <= 5 años (igual que en el PDF)
+      if (ageYears <= 5) {
+        console.log('Edad <= 5 años, agregando gráficas adicionales')
+        
+        chartTypes.push({ 
+          name: 'perimetro_cefalico', 
+          value: Number(followUpData.headCircumference) || 0 
+        })
+        
+        chartTypes.push({ 
+          name: 'pliegue_triceps', 
+          value: Number(followUpData.tricepsFold) || 0 
+        })
+        
+        chartTypes.push({ 
+          name: 'pliegue_subescapular', 
+          value: Number(followUpData.subscapularFold) || 0 
+        })
+      } else {
+        console.log('Edad > 5 años, solo gráficas básicas')
+      }
+      
+      console.log('Gráficas a cargar:', chartTypes)
+      
+      const charts: {[key: string]: any} = {}
+      
+      for (const chart of chartTypes) {
+        try {
+          console.log(`\nCargando gráfica: ${chart.name}, valor: ${chart.value}`)
+          
+          const params = new URLSearchParams({
+            indicator: chart.name,
+            age_days: ageDays.toString(),
+            gender: gender,
+            value: chart.value?.toString() || '0'
+          })
+          
+          const url = `/api/nutrition/growth-chart-data?${params.toString()}`
+          console.log('URL:', url)
+          
+          const response = await fetch(url)
+          
+          if (response.ok) {
+            const data = await response.json()
+            console.log(`✓ Gráfica ${chart.name} cargada. Datos:`, data)
+            charts[chart.name] = data
+          } else {
+            const errorText = await response.text()
+            console.error(`✗ Error en gráfica ${chart.name}:`, response.status, errorText)
+          }
+        } catch (error) {
+          console.error(`✗ Error cargando gráfica ${chart.name}:`, error)
+        }
+      }
+      
+      console.log('\n=== RESULTADO FINAL ===')
+      console.log('Gráficas cargadas exitosamente:', Object.keys(charts))
+      console.log('Total de gráficas:', Object.keys(charts).length)
+      
+      setGrowthCharts(charts)
+      
+      if (Object.keys(charts).length === 0) {
+        toast.error("No se pudieron cargar las gráficas", {
+          description: "Verifica que el servidor esté funcionando correctamente"
+        })
+      } else {
+        toast.success(`${Object.keys(charts).length} gráficas cargadas`, {
+          description: "Las curvas de crecimiento están listas"
+        })
+      }
+    } catch (error) {
+      console.error("Error cargando gráficas:", error)
+      toast.error("Error", {
+        description: "No se pudieron cargar algunas gráficas de crecimiento"
+      })
+    } finally {
+      setLoadingCharts(false)
+    }
+  }
+
   const riskLevel = assessmentData?.assessment.risk_level || "Bajo"
   const nutritionalStatus = assessmentData?.assessment.nutritional_status || {
     peso_edad: "Normal",
@@ -123,17 +231,42 @@ export function FollowUpResults({ child, followUpData, theme, onClose, onSaveToP
     }
   }
 
-  const getGeneralStatus = (risk: string) => {
-    switch (risk) {
-      case "Alto":
-        return "Requiere atención médica urgente"
-      case "Medio":
-        return "Requiere seguimiento cercano"
-      case "Bajo":
-        return "Niño aparentemente sano"
-      default:
-        return "Estado no determinado"
+  const getStatusColor = (status: string) => {
+    if (!status) return "text-gray-600"
+    const statusLower = status.toLowerCase()
+    
+    // Casos críticos (rojo)
+    if (statusLower.includes("desnutrición") || statusLower.includes("severa") || statusLower.includes("muy bajo")) {
+      return "text-red-600 font-bold"
     }
+    
+    // Casos de alerta (naranja) - AGREGADO "baja" y "retraso"
+    if (statusLower.includes("riesgo") || 
+        statusLower.includes("bajo") || 
+        statusLower.includes("baja") ||
+        statusLower.includes("retraso") ||
+        statusLower.includes("moderada") ||
+        statusLower.includes("alto") || 
+        statusLower.includes("obesidad") || 
+        statusLower.includes("sobrepeso")) {
+      return "text-orange-600 font-semibold"
+    }
+    
+    // Normal (verde)
+    return "text-green-600"
+  }
+
+  const getRangoReferencia = (indicator: string) => {
+    const rangos: { [key: string]: string } = {
+      "peso_edad": "-1 ≤ z ≤ +1",
+      "talla_edad": "-1 ≤ z ≤ +1",
+      "peso_talla": "-1 ≤ z ≤ +1",
+      "imc_edad": "-1 ≤ z ≤ +1",
+      "perimetro_cefalico_edad": "-2 ≤ z ≤ +2",
+      "pliegue_triceps": "-1 ≤ z ≤ +1",
+      "pliegue_subescapular": "-1 ≤ z ≤ +1"
+    }
+    return rangos[indicator] || "-1 ≤ z ≤ +1"
   }
 
   const calculateAgeDays = (birthDate: string): number => {
@@ -148,7 +281,6 @@ export function FollowUpResults({ child, followUpData, theme, onClose, onSaveToP
     setIsGeneratingPDF(true)
     
     try {
-      const apiBase = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8000'
       const ageDays = calculateAgeDays(child.birthDate)
       
       const observaciones = []
@@ -180,7 +312,7 @@ export function FollowUpResults({ child, followUpData, theme, onClose, onSaveToP
         nutricionist_observation: observacionesTexto
       })
       
-      const url = `${apiBase}/api/nutrition/nutritional-report?${params.toString()}`
+      const url = `/api/nutrition/nutritional-report?${params.toString()}`
       const response = await fetch(url)
       
       if (!response.ok) {
@@ -221,7 +353,6 @@ export function FollowUpResults({ child, followUpData, theme, onClose, onSaveToP
     })
   }
 
-  // Mostrar loading mientras carga la evaluación
   if (loadingAssessment) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -242,121 +373,302 @@ export function FollowUpResults({ child, followUpData, theme, onClose, onSaveToP
             <div className="flex items-center gap-4">
               <Avatar className="w-16 h-16">
                 <AvatarFallback className="bg-gradient-to-br from-blue-400 to-blue-500 text-white font-bold text-lg">
-                  {child.name
-                    .split(" ")
-                    .map((n) => n[0])
-                    .join("")}
+                  {child.name.split(" ").map((n) => n[0]).join("")}
                 </AvatarFallback>
               </Avatar>
               <div>
-                <h2 className="text-2xl font-bold text-slate-800">Resultados de Evaluación</h2>
-                <p className="text-lg text-slate-600">
-                  {child.name} • {child.age}
+                <h2 className="text-2xl font-bold text-slate-800">{child.name}</h2>
+                <p className="text-slate-600">
+                  {child.age} • {child.gender}
                 </p>
-                <p className="text-sm text-slate-500">Fecha de evaluación: {new Date().toLocaleDateString()}</p>
+                <Badge className={`mt-2 ${getRiskColor(riskLevel)}`}>
+                  Nivel de Riesgo: {riskLevel}
+                </Badge>
               </div>
             </div>
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={onClose}>
+            <div className="flex gap-3">
+              <Button
+                variant="outline"
+                onClick={onSaveToProfile}  // CAMBIAR: de onClose a onSaveToProfile
+                className={`${theme.cardBorder} hover:bg-opacity-50`}
+              >
                 Cerrar
               </Button>
-              <Button onClick={handleSave} className={`bg-gradient-to-r ${theme.buttonColor} text-white`}>
-                Guardar en Perfil
+              <Button
+                onClick={generateClinicalPDF}
+                disabled={isGeneratingPDF}
+                className="bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:scale-105 transition-transform hover:from-blue-600 hover:to-blue-700"              >
+                {isGeneratingPDF ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Generando...
+                  </>
+                ) : (
+                  <>
+                    <Download className="w-4 h-4 mr-2" />
+                    Descargar PDF
+                  </>
+                )}
               </Button>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
+      {/* Tabs de navegación */}
+      <Tabs value={activeTab} onValueChange={(value) => {
+        setActiveTab(value)
+        if (value === "growth") {
+          loadGrowthCharts()
+        }
+      }} className="w-full">
+        <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="results">Resultados</TabsTrigger>
           <TabsTrigger value="nutrition">Recomendaciones Nutricionales</TabsTrigger>
-          <TabsTrigger value="general">Recomendaciones Generales</TabsTrigger>
-          <TabsTrigger value="caregiver">Para el Cuidador</TabsTrigger>
+          <TabsTrigger value="growth">Curvas de Crecimiento</TabsTrigger>
         </TabsList>
 
         <TabsContent value="results" className="space-y-6">
-          {/* Clasificación nutricional CON DATOS REALES */}
+          {/* 1. ANÁLISIS ANTROPOMÉTRICO COMPLETO */}
           <Card className={`${theme.cardBorder} bg-gradient-to-br from-white to-blue-50`}>
             <CardHeader>
               <CardTitle className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                <AlertTriangle className="w-5 h-5" />
-                Clasificación Nutricional
+                <Activity className="w-6 h-6 text-blue-500" />
+                Análisis Antropométrico
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center">
-                    <span className="font-medium text-slate-700">Nivel de Riesgo:</span>
-                    <Badge className={getRiskColor(riskLevel)}>
-                      {riskLevel}
-                    </Badge>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="p-4 bg-white rounded-lg border">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Scale className="w-5 h-5 text-blue-500" />
+                    <span className="font-semibold text-slate-700">Peso</span>
                   </div>
-                  <div className="flex justify-between items-center">
-                    <span className="font-medium text-slate-700">Peso/Edad:</span>
-                    <Badge variant="outline">{nutritionalStatus.peso_edad}</Badge>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="font-medium text-slate-700">Talla/Edad:</span>
-                    <Badge variant="outline">{nutritionalStatus.talla_edad}</Badge>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="font-medium text-slate-700">IMC/Edad:</span>
-                    <Badge variant="outline">{nutritionalStatus.imc_edad}</Badge>
-                  </div>
-                </div>
-                <div className="space-y-3">
-                  <div>
-                    <span className="font-medium text-slate-700">Estado General:</span>
-                    <p className="text-sm text-slate-600 mt-1">{getGeneralStatus(riskLevel)}</p>
-                  </div>
-                  {assessmentData && (
-                    <div>
-                      <span className="font-medium text-slate-700">Z-Scores:</span>
-                      <div className="text-xs text-slate-600 mt-1 space-y-1">
-                        <p>Peso/Edad: {assessmentData.assessment.weight_for_age_zscore?.toFixed(2) || 'N/A'}</p>
-                        <p>Talla/Edad: {assessmentData.assessment.height_for_age_zscore?.toFixed(2) || 'N/A'}</p>
-                        <p>IMC/Edad: {assessmentData.assessment.bmi_for_age_zscore?.toFixed(2) || 'N/A'}</p>
-                      </div>
+                  <div className="text-2xl font-bold text-blue-600">{followUpData.weight} kg</div>
+                  {assessmentData?.weight_info && (
+                    <div className="text-xs text-slate-500 mt-1">
+                      Peso esperado: {assessmentData.weight_info.expected_weight?.toFixed(1)} kg
                     </div>
                   )}
                 </div>
+
+                <div className="p-4 bg-white rounded-lg border">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Ruler className="w-5 h-5 text-blue-500" />
+                    <span className="font-semibold text-slate-700">Estatura</span>
+                  </div>
+                  <div className="text-2xl font-bold text-blue-600">{followUpData.height} cm</div>
+                </div>
+
+                <div className="p-4 bg-white rounded-lg border">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Activity className="w-5 h-5 text-blue-500" />
+                    <span className="font-semibold text-slate-700">IMC</span>
+                  </div>
+                  <div className="text-2xl font-bold text-blue-600">
+                    {assessmentData?.assessment.bmi?.toFixed(1) || 'N/A'}
+                  </div>
+                </div>
+
+                {followUpData.headCircumference && (
+                  <div className="p-4 bg-white rounded-lg border">
+                    <div className="font-semibold text-slate-700 mb-2">Perímetro Cefálico</div>
+                    <div className="text-2xl font-bold text-blue-600">{followUpData.headCircumference} cm</div>
+                  </div>
+                )}
+
+                {followUpData.armCircumference && (
+                  <div className="p-4 bg-white rounded-lg border">
+                    <div className="font-semibold text-slate-700 mb-2">Circunferencia Braquial</div>
+                    <div className="text-2xl font-bold text-blue-600">{followUpData.armCircumference} cm</div>
+                  </div>
+                )}
+
+                {followUpData.tricepsFold && (
+                  <div className="p-4 bg-white rounded-lg border">
+                    <div className="font-semibold text-slate-700 mb-2">Pliegue Tricipital</div>
+                    <div className="text-2xl font-bold text-blue-600">{followUpData.tricepsFold} mm</div>
+                  </div>
+                )}
+
+                {followUpData.subscapularFold && (
+                  <div className="p-4 bg-white rounded-lg border">
+                    <div className="font-semibold text-slate-700 mb-2">Pliegue Subescapular</div>
+                    <div className="text-2xl font-bold text-blue-600">{followUpData.subscapularFold} mm</div>
+                  </div>
+                )}
+
+                {followUpData.abdominalPerimeter && (
+                  <div className="p-4 bg-white rounded-lg border">
+                    <div className="font-semibold text-slate-700 mb-2">Perímetro Abdominal</div>
+                    <div className="text-2xl font-bold text-blue-600">{followUpData.abdominalPerimeter} cm</div>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
 
-          {/* Datos antropométricos */}
-          <Card className={`${theme.cardBorder} bg-gradient-to-br from-white to-green-50`}>
+          {/* 2. TABLA DE CLASIFICACIÓN NUTRICIONAL */}
+          <Card className={`${theme.cardBorder} bg-gradient-to-br from-white to-purple-50`}>
             <CardHeader>
-              <CardTitle className="text-xl font-bold text-slate-800">Análisis Antropométrico</CardTitle>
+              <CardTitle className="text-xl font-bold text-slate-800">Clasificación Nutricional</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="text-center p-4 bg-white rounded-lg border">
-                  <div className="text-2xl font-bold text-slate-800">{followUpData.weight || "N/A"}</div>
-                  <div className="text-sm text-slate-600">Peso (kg)</div>
-                </div>
-                <div className="text-center p-4 bg-white rounded-lg border">
-                  <div className="text-2xl font-bold text-slate-800">{followUpData.height || "N/A"}</div>
-                  <div className="text-sm text-slate-600">Talla (cm)</div>
-                </div>
-                <div className="text-center p-4 bg-white rounded-lg border">
-                  <div className="text-2xl font-bold text-slate-800">
-                    {assessmentData?.assessment.bmi?.toFixed(1) || "N/A"}
-                  </div>
-                  <div className="text-sm text-slate-600">IMC</div>
-                </div>
-                <div className="text-center p-4 bg-white rounded-lg border">
-                  <div className="text-2xl font-bold text-slate-800">{child.age}</div>
-                  <div className="text-sm text-slate-600">Edad</div>
-                </div>
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="bg-slate-700 text-white">
+                      <th className="p-3 text-left border">Indicador (Z-score)</th>
+                      <th className="p-3 text-center border">Valor</th>
+                      <th className="p-3 text-center border">Rango de referencia (normal)</th>
+                      <th className="p-3 text-left border">Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white">
+                    <tr>
+                      <td className="p-3 border font-semibold">Peso para la Edad</td>
+                      <td className="p-3 border text-center">
+                        {assessmentData?.assessment.weight_for_age_zscore?.toFixed(2) || 'N/A'}
+                      </td>
+                      <td className="p-3 border text-center">{getRangoReferencia('peso_edad')}</td>
+                      <td className={`p-3 border ${getStatusColor(nutritionalStatus.peso_edad)}`}>
+                        {nutritionalStatus.peso_edad || 'N/A'}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="p-3 border font-semibold">Talla para la Edad</td>
+                      <td className="p-3 border text-center">
+                        {assessmentData?.assessment.height_for_age_zscore?.toFixed(2) || 'N/A'}
+                      </td>
+                      <td className="p-3 border text-center">{getRangoReferencia('talla_edad')}</td>
+                      <td className={`p-3 border ${getStatusColor(nutritionalStatus.talla_edad)}`}>
+                        {nutritionalStatus.talla_edad || 'N/A'}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="p-3 border font-semibold">IMC para la Edad</td>
+                      <td className="p-3 border text-center">
+                        {assessmentData?.assessment.bmi_for_age_zscore?.toFixed(2) || 'N/A'}
+                      </td>
+                      <td className="p-3 border text-center">{getRangoReferencia('imc_edad')}</td>
+                      <td className={`p-3 border ${getStatusColor(nutritionalStatus.imc_edad)}`}>
+                        {nutritionalStatus.imc_edad || 'N/A'}
+                      </td>
+                    </tr>
+
+                    {assessmentData?.assessment.head_circumference_zscore && (
+                      <tr>
+                        <td className="p-3 border font-semibold">Circunferencia craneal</td>
+                        <td className="p-3 border text-center">
+                          {assessmentData.assessment.head_circumference_zscore.toFixed(2)}
+                        </td>
+                        <td className="p-3 border text-center">{getRangoReferencia('perimetro_cefalico_edad')}</td>
+                        <td className={`p-3 border ${getStatusColor(assessmentData?.assessment.nutritional_status.perimetro_cefalico_edad || '')}`}>
+                          {assessmentData?.assessment.nutritional_status.perimetro_cefalico_edad || 'N/A'}
+                        </td>
+                      </tr>
+                    )}
+                    {assessmentData?.assessment.triceps_skinfold_zscore && (
+                      <tr>
+                        <td className="p-3 border font-semibold">Pliegue triceps</td>
+                        <td className="p-3 border text-center">
+                          {assessmentData.assessment.triceps_skinfold_zscore === -Infinity 
+                            ? '-inf' 
+                            : assessmentData.assessment.triceps_skinfold_zscore.toFixed(2)}
+                        </td>
+                        <td className="p-3 border text-center">{getRangoReferencia('pliegue_triceps')}</td>
+                        <td className={`p-3 border ${getStatusColor(assessmentData?.assessment.nutritional_status.pliegue_triceps || '')}`}>
+                          {assessmentData?.assessment.nutritional_status.pliegue_triceps || 'N/A'}
+                        </td>
+                      </tr>
+                    )}
+                    {assessmentData?.assessment.subscapular_skinfold_zscore && (
+                      <tr>
+                        <td className="p-3 border font-semibold">Pliegue subescapular</td>
+                        <td className="p-3 border text-center">
+                          {assessmentData.assessment.subscapular_skinfold_zscore === -Infinity 
+                            ? '-inf' 
+                            : assessmentData.assessment.subscapular_skinfold_zscore.toFixed(2)}
+                        </td>
+                        <td className="p-3 border text-center">{getRangoReferencia('pliegue_subescapular')}</td>
+                        <td className={`p-3 border ${getStatusColor(assessmentData?.assessment.nutritional_status.pliegue_subescapular || '')}`}>
+                          {assessmentData?.assessment.nutritional_status.pliegue_subescapular || 'N/A'}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
             </CardContent>
           </Card>
 
-          {/* Requerimientos Energéticos */}
+          {/* 3. OBSERVACIONES CLÍNICAS */}
+          <Card className={`${theme.cardBorder} bg-gradient-to-br from-white to-amber-50`}>
+            <CardHeader>
+              <CardTitle className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                <FileText className="w-6 h-6 text-amber-500" />
+                Observaciones Clínicas
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Síntomas */}
+              <div className="bg-white p-4 rounded-lg border border-amber-200">
+                <div className="flex items-center gap-2 mb-3">
+                  <AlertTriangle className="w-5 h-5 text-amber-600" />
+                  <h4 className="font-bold text-slate-800 text-base">Síntomas reportados</h4>
+                </div>
+                {followUpData.symptoms && followUpData.symptoms.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {followUpData.symptoms.map((symptom: string, idx: number) => (
+                      <Badge key={idx} variant="outline" className="bg-amber-50 text-amber-700 border-amber-300">
+                        {symptom}
+                      </Badge>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-slate-500 text-sm italic">No se reportaron síntomas</p>
+                )}
+              </div>
+
+              {/* Signos físicos */}
+              {followUpData.physicalSigns && followUpData.physicalSigns.length > 0 && (
+                <div className="bg-white p-4 rounded-lg border border-red-200">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Activity className="w-5 h-5 text-red-600" />
+                    <h4 className="font-bold text-slate-800 text-base">Signos físicos observados</h4>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {followUpData.physicalSigns.map((sign: string, idx: number) => (
+                      <Badge key={idx} variant="outline" className="bg-red-50 text-red-700 border-red-300">
+                        {sign}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Observación del nutricionista */}
+              <div className="bg-white p-4 rounded-lg border border-blue-200">
+                <div className="flex items-center gap-2 mb-3">
+                  <User className="w-5 h-5 text-blue-600" />
+                  <h4 className="font-bold text-slate-800 text-base">Observación del nutricionista</h4>
+                </div>
+                {followUpData.clinicalObservations ? (
+                  <div className="bg-blue-50 p-3 rounded border border-blue-100">
+                    <p className="text-slate-700 text-sm leading-relaxed whitespace-pre-wrap">
+                      {followUpData.clinicalObservations}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-slate-500 text-sm italic">Sin observaciones adicionales del nutricionista</p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="nutrition" className="space-y-6">
+          {/* 1. REQUERIMIENTOS ENERGÉTICOS */}
           {assessmentData?.energy_requirements && (
             <Card className={`${theme.cardBorder} bg-gradient-to-br from-white to-purple-50`}>
               <CardHeader>
@@ -366,14 +678,19 @@ export function FollowUpResults({ child, followUpData, theme, onClose, onSaveToP
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="text-center p-4 bg-white rounded-lg border">
                     <div className="text-3xl font-bold text-purple-600">
-                      {assessmentData.energy_requirements.total_energy_kcal?.toFixed(0) || 'N/A'}
+                      {assessmentData.energy_requirements.kcal_per_day?.toFixed(0) || 'N/A'}
                     </div>
                     <div className="text-sm text-slate-600">kcal/día</div>
+                    {assessmentData.weight_info && (
+                      <div className="text-xs text-slate-500 mt-2">
+                        Para peso esperado: {assessmentData.weight_info.expected_weight?.toFixed(1)} kg
+                      </div>
+                    )}
                   </div>
-                  {assessmentData.energy_requirements.per_kg_kcal && (
+                  {assessmentData.energy_requirements.kcal_per_kg && (
                     <div className="text-center p-4 bg-white rounded-lg border">
                       <div className="text-3xl font-bold text-purple-600">
-                        {assessmentData.energy_requirements.per_kg_kcal?.toFixed(1)}
+                        {assessmentData.energy_requirements.kcal_per_kg?.toFixed(1)}
                       </div>
                       <div className="text-sm text-slate-600">kcal/kg/día</div>
                     </div>
@@ -382,120 +699,164 @@ export function FollowUpResults({ child, followUpData, theme, onClose, onSaveToP
               </CardContent>
             </Card>
           )}
-        </TabsContent>
 
-        <TabsContent value="nutrition" className="space-y-6">
-          {/* Mostrar recomendaciones reales si están disponibles */}
-          {assessmentData?.recommendations ? (
+          {/* 2. REQUERIMIENTOS DIARIOS DE NUTRIENTES */}
+          {assessmentData?.nutrient_requirements && assessmentData.nutrient_requirements.length > 0 && (
             <Card className={`${theme.cardBorder} bg-gradient-to-br from-white to-green-50`}>
               <CardHeader>
-                <CardTitle className="text-lg font-bold text-slate-800">Recomendaciones Nutricionales</CardTitle>
+                <CardTitle className="text-xl font-bold text-slate-800">Requerimientos Diarios de Nutrientes</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-3">
-                  {assessmentData.recommendations.nutritional_recommendations.map((rec, index) => (
-                    <div key={index} className="flex items-start gap-2">
-                      <CheckCircle className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
-                      <span className="text-sm text-slate-700">{rec}</span>
-                    </div>
-                  ))}
+                {/* AGREGADO: contenedor con altura máxima y scroll */}
+                <div className="max-h-[500px] overflow-y-auto border rounded-lg">
+                  <div className="overflow-x-auto">
+                    <table className="w-full border-collapse text-sm">
+                      <thead className="sticky top-0 z-10">
+                        <tr className="bg-slate-700 text-white">
+                          <th className="p-2 text-left border">Nutriente</th>
+                          <th className="p-2 text-center border">Cantidad Recomendada (g/día)</th>
+                          <th className="p-2 text-left border">Alimento Sugerido</th>
+                          <th className="p-2 text-center border">Cantidad en 100g</th>
+                          <th className="p-2 text-center border">Cantidad Recomendada (g/día)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white">
+                        {assessmentData.nutrient_requirements.map((nutrient, idx) => {
+                          const alimentos = nutrient.alimentos || []
+                          const numFilas = Math.max(1, alimentos.length)
+                          
+                          // Limpiar el nombre del nutriente: quitar "mg/día", "g/día", "g/kg/día", asterisco, etc.
+                          const nutrienteName = (nutrient.nutriente || '')
+                            .replace(/\*/g, '')
+                            .replace(/\s+(mg\/día|g\/kg\/día|g\/día|Aia)$/gi, '')
+                            .trim()
+                          
+                          return alimentos.length > 0 ? (
+                            alimentos.map((alimento: any[], alimentoIdx: number) => (
+                              <tr key={`${idx}-${alimentoIdx}`} className={alimentoIdx % 2 === 0 ? 'bg-gray-50' : ''}>
+                                {alimentoIdx === 0 && (
+                                  <>
+                                    <td className="p-2 border font-semibold" rowSpan={numFilas}>
+                                      {nutrienteName}
+                                    </td>
+                                    <td className="p-2 border text-center" rowSpan={numFilas}>
+                                      {nutrient.valor_recomendado || 'N/A'}
+                                    </td>
+                                  </>
+                                )}
+                                <td className="p-2 border">{alimento[0] || 'N/A'}</td>
+                                <td className="p-2 border text-center">{alimento[1] || 'N/A'}</td>
+                                <td className="p-2 border text-center">{alimento[2] || 'N/A'}</td>
+                              </tr>
+                            ))
+                          ) : (
+                            <tr key={idx} className={idx % 2 === 0 ? 'bg-gray-50' : ''}>
+                              <td className="p-2 border font-semibold">{nutrienteName}</td>
+                              <td className="p-2 border text-center">{nutrient.valor_recomendado || 'N/A'}</td>
+                              <td className="p-2 border text-slate-400" colSpan={3}>Sin alimentos disponibles</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* 3. RECOMENDACIONES */}
+          {assessmentData?.recommendations && (
+            <>
+              {assessmentData.recommendations.nutritional_recommendations?.length > 0 && (
+                <Card className={`${theme.cardBorder} bg-gradient-to-br from-white to-blue-50`}>
+                  <CardHeader>
+                    <CardTitle className="text-xl font-bold text-slate-800">Recomendaciones Nutricionales</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ul className="space-y-2">
+                      {assessmentData.recommendations.nutritional_recommendations.map((rec, idx) => (
+                        <li key={idx} className="flex items-start gap-2">
+                          <CheckCircle className="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
+                          <span className="text-slate-700">{rec}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </CardContent>
+                </Card>
+              )}
+
+              {assessmentData.recommendations.general_recommendations?.length > 0 && (
+                <Card className={`${theme.cardBorder} bg-gradient-to-br from-white to-amber-50`}>
+                  <CardHeader>
+                    <CardTitle className="text-xl font-bold text-slate-800">Recomendaciones Generales</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ul className="space-y-2">
+                      {assessmentData.recommendations.general_recommendations.map((rec, idx) => (
+                        <li key={idx} className="flex items-start gap-2">
+                          <CheckCircle className="w-5 h-5 text-blue-500 mt-0.5 flex-shrink-0" />
+                          <span className="text-slate-700">{rec}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </CardContent>
+                </Card>
+              )}
+
+              {assessmentData.recommendations.caregiver_instructions?.length > 0 && (
+                <Card className={`${theme.cardBorder} bg-gradient-to-br from-white to-pink-50`}>
+                  <CardHeader>
+                    <CardTitle className="text-xl font-bold text-slate-800">Instrucciones para el Cuidador</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ul className="space-y-2">
+                      {assessmentData.recommendations.caregiver_instructions.map((instruction, idx) => (
+                        <li key={idx} className="flex items-start gap-2">
+                          <AlertTriangle className="w-5 h-5 text-amber-500 mt-0.5 flex-shrink-0" />
+                          <span className="text-slate-700">{instruction}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </CardContent>
+                </Card>
+              )}
+            </>
+          )}
+        </TabsContent>
+
+        {/* Tab 3: Curvas de Crecimiento */}
+        <TabsContent value="growth" className="mt-6">
+          {loadingCharts ? (
+            <div className="flex items-center justify-center min-h-[400px]">
+              <div className="text-center">
+                <Loader2 className="w-12 h-12 animate-spin text-blue-500 mx-auto mb-4" />
+                <p className="text-slate-600">Cargando curvas de crecimiento...</p>
+              </div>
+            </div>
+          ) : Object.keys(growthCharts).length === 0 ? (
+            <Card>
+              <CardContent className="p-12 text-center">
+                <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+                <h3 className="text-xl font-bold text-slate-800 mb-2">No se pudieron cargar las gráficas</h3>
+                <p className="text-slate-600 mb-4">Verifica que el servidor esté funcionando correctamente</p>
+                <Button onClick={loadGrowthCharts} variant="outline">
+                  Reintentar
+                </Button>
               </CardContent>
             </Card>
           ) : (
-            <div className="text-center text-slate-500">
-              Cargando recomendaciones...
+            <div className="space-y-6">
+              {Object.keys(growthCharts).map(key => {
+                const chartData = growthCharts[key]
+                return (
+                  <WHOGrowthChart key={key} data={chartData} />
+                )
+              })}
             </div>
-          )}
-
-          {/* Requerimientos de Nutrientes */}
-          {assessmentData?.nutrient_requirements && assessmentData.nutrient_requirements.length > 0 && (
-            <Card className={`${theme.cardBorder} bg-gradient-to-br from-white to-blue-50`}>
-              <CardHeader>
-                <CardTitle className="text-lg font-bold text-slate-800">Requerimientos Diarios de Nutrientes</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {assessmentData.nutrient_requirements.slice(0, 12).map((nutrient: any, index: number) => (
-                    <div key={index} className="p-3 bg-white rounded-lg border">
-                      <div className="font-medium text-slate-700 text-sm">{nutrient.nutriente || nutrient.name}</div>
-                      <div className="text-lg font-bold text-blue-600">
-                        {nutrient.valor_recomendado || nutrient.recommended_value}
-                      </div>
-                      <div className="text-xs text-slate-500">{nutrient.unidad || nutrient.unit}</div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-        </TabsContent>
-
-        <TabsContent value="general" className="space-y-6">
-          {assessmentData?.recommendations?.general_recommendations && (
-            <Card className={`${theme.cardBorder} bg-gradient-to-br from-white to-blue-50`}>
-              <CardHeader>
-                <CardTitle className="text-lg font-bold text-slate-800">Recomendaciones Generales</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {assessmentData.recommendations.general_recommendations.map((rec, index) => (
-                    <div key={index} className="flex items-start gap-2">
-                      <CheckCircle className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
-                      <span className="text-sm text-slate-700">{rec}</span>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-        </TabsContent>
-
-        <TabsContent value="caregiver" className="space-y-6">
-          {assessmentData?.recommendations?.caregiver_instructions && (
-            <Card className={`${theme.cardBorder} bg-gradient-to-br from-white to-yellow-50`}>
-              <CardHeader>
-                <CardTitle className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                  <User className="w-5 h-5" />
-                  Instrucciones para el Cuidador
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {assessmentData.recommendations.caregiver_instructions.map((instruction, index) => (
-                  <div key={index} className="bg-white p-4 rounded-lg border border-yellow-200">
-                    <p className="text-slate-700 leading-relaxed">{instruction}</p>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
           )}
         </TabsContent>
       </Tabs>
-
-      {/* Botón de reporte PDF */}
-      <Card className={`${theme.cardBorder} bg-gradient-to-br ${theme.cardBg}`}>
-        <CardContent className="p-6">
-          <div className="flex justify-center">
-            <Button
-              onClick={generateClinicalPDF}
-              disabled={isGeneratingPDF}
-              className="bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:from-blue-600 hover:to-blue-700 disabled:opacity-50"
-            >
-              {isGeneratingPDF ? (
-                <>
-                  <Download className="w-4 h-4 mr-2 animate-spin" />
-                  Generando PDF...
-                </>
-              ) : (
-                <>
-                  <FileText className="w-4 h-4 mr-2" />
-                  Descargar Reporte Clínico PDF
-                </>
-              )}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
     </div>
   )
 }

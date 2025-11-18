@@ -14,6 +14,14 @@ interface DashboardProps {
 }
 
 export function Dashboard({ theme }: DashboardProps) {
+  // Mover formatDate DENTRO del componente
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString)
+    const day = date.getDate().toString().padStart(2, '0')
+    const months = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
+    const month = months[date.getMonth()]
+    return `${day} ${month}`
+  }
 
   const iconMap = {
     "user-plus": <UserPlus className="w-5 h-5 text-blue-500" />,
@@ -94,7 +102,7 @@ export function Dashboard({ theme }: DashboardProps) {
                     </p>
                   </div>
                   <Badge variant="outline" className="ml-auto">
-                    {new Date(item.date).toLocaleDateString("es-ES", { day: "2-digit", month: "short" })}
+                    {formatDate(item.date)}
                   </Badge>
                 </div>
               ))}

@@ -19,10 +19,25 @@ class FollowupCreate(BaseModel):
     estatura: Optional[float] = None
     circunferencia_braquial: Optional[float] = None
     perimetro_cefalico: Optional[float] = None
-    pliegue_cutaneo: Optional[float] = None
+    pliegue_triceps: Optional[float] = None
+    pliegue_subescapular: Optional[float] = None
     perimetro_abdominal: Optional[float] = None
     hemoglobina: Optional[float] = None
     foto_ojo_url: Optional[str] = None
+
+def _generate_nutrient_requirements(age_days: int, gender: str, weight: float, kcal_per_day: Optional[float]):
+    """Helper para generar requerimientos de nutrientes si no existen en BD"""
+    try:
+        nutrient_data = NutritionService.get_nutrient_food_table_data(
+            age_days=age_days,
+            gender=gender,
+            weight=weight,
+            kcal_per_day=kcal_per_day
+        )
+        return nutrient_data if nutrient_data else []
+    except Exception as e:
+        print(f"Error generando nutrient_requirements: {e}")
+        return []
 
 @router.post("/")
 def create_followup(followup_data: FollowupCreate, db: Session = Depends(get_db)):
@@ -56,7 +71,8 @@ def create_followup(followup_data: FollowupCreate, db: Session = Depends(get_db)
             imc=imc,
             circunferencia_braquial=followup_data.circunferencia_braquial,
             perimetro_cefalico=followup_data.perimetro_cefalico,
-            pliegue_cutaneo=followup_data.pliegue_cutaneo,
+            pliegue_triceps=followup_data.pliegue_triceps,
+            pliegue_subescapular=followup_data.pliegue_subescapular,
             perimetro_abdominal=followup_data.perimetro_abdominal
         )
         db.add(datos_antropo)
@@ -92,8 +108,8 @@ def create_followup(followup_data: FollowupCreate, db: Session = Depends(get_db)
                     height=followup_data.estatura,
                     gender=gender,
                     head_circumference=followup_data.perimetro_cefalico,
-                    triceps_skinfold=followup_data.pliegue_cutaneo,
-                    subscapular_skinfold=None
+                    triceps_skinfold=followup_data.pliegue_triceps,
+                    subscapular_skinfold=followup_data.pliegue_subescapular
                 )
                 
                 # Obtener requerimientos energéticos
@@ -157,41 +173,6 @@ def create_followup(followup_data: FollowupCreate, db: Session = Depends(get_db)
         raise HTTPException(status_code=500, detail=f"Error al crear seguimiento: {str(e)}")
 
 
-@router.get("/")
-def list_followups(
-    skip: int = 0,
-    limit: int = 100,
-    db: Session = Depends(get_db)
-):
-    """
-    Lista todos los seguimientos con paginación
-    """
-    from src.db.models import Infante, DatoAntropometrico
-    
-    seguimientos = db.query(Seguimiento).order_by(Seguimiento.fecha.desc()).offset(skip).limit(limit).all()
-    
-    result = []
-    for seg in seguimientos:
-        # Obtener datos antropométricos
-        datos_antropo = db.query(DatoAntropometrico).filter(
-            DatoAntropometrico.seguimiento_id == seg.id_seguimiento
-        ).first()
-        
-        # Obtener infante
-        infante = db.query(Infante).filter(Infante.id_infante == seg.infante_id).first()
-        
-        result.append({
-            "id_seguimiento": seg.id_seguimiento,
-            "infante_id": seg.infante_id,
-            "infante_nombre": infante.nombre if infante else None,
-            "fecha": seg.fecha.isoformat() if seg.fecha else None,
-            "observacion": seg.observacion,
-            "peso": float(datos_antropo.peso) if datos_antropo and datos_antropo.peso else None,
-            "estatura": float(datos_antropo.estatura) if datos_antropo and datos_antropo.estatura else None,
-            "imc": float(datos_antropo.imc) if datos_antropo and datos_antropo.imc else None
-        })
-    
-    return result
 
 
 @router.get("/{seguimiento_id}/evaluacion")
@@ -199,12 +180,85 @@ def get_evaluacion_nutricional(seguimiento_id: int, db: Session = Depends(get_db
     """
     Obtiene la evaluación nutricional completa de un seguimiento
     """
+    from src.db.models import Infante, DatoAntropometrico
+    
     evaluacion = db.query(EvaluacionNutricional).filter(
         EvaluacionNutricional.seguimiento_id == seguimiento_id
     ).first()
     
     if not evaluacion:
         raise HTTPException(status_code=404, detail="Evaluación no encontrada")
+    
+    # DEBUG: Verificar qué tiene evaluacion.requerimientos_nutrientes
+    print(f"\n===== DEBUG GET EVALUACION =====")
+    print(f"Seguimiento ID: {seguimiento_id}")
+    print(f"Evaluacion ID: {evaluacion.id_evaluacion}")
+    print(f"requerimientos_nutrientes type: {type(evaluacion.requerimientos_nutrientes)}")
+    print(f"requerimientos_nutrientes value: {evaluacion.requerimientos_nutrientes}")
+    print(f"requerimientos_nutrientes is None: {evaluacion.requerimientos_nutrientes is None}")
+    print(f"requerimientos_nutrientes length: {len(evaluacion.requerimientos_nutrientes) if evaluacion.requerimientos_nutrientes else 'N/A'}")
+    print(f"================================\n")
+    
+    # Obtener el seguimiento para obtener datos del infante
+    seguimiento = db.query(Seguimiento).filter(
+        Seguimiento.id_seguimiento == seguimiento_id
+    ).first()
+    
+    # Obtener datos antropométricos
+    datos_antropo = db.query(DatoAntropometrico).filter(
+        DatoAntropometrico.seguimiento_id == seguimiento_id
+    ).first()
+    
+    # Obtener infante
+    infante = db.query(Infante).filter(
+        Infante.id_infante == seguimiento.infante_id
+    ).first()
+    
+    # Calcular edad en días
+    from datetime import datetime
+    fecha_nacimiento = infante.fecha_nacimiento
+    if isinstance(fecha_nacimiento, str):
+        fecha_nacimiento = datetime.strptime(fecha_nacimiento, "%Y-%m-%d").date()
+    
+    age_days = (seguimiento.fecha - fecha_nacimiento).days
+    gender = 'male' if infante.genero == 'M' else 'female'
+    
+    # Calcular peso esperado desde las tablas WHO
+    weight_table = NutritionService.get_table_for_indicator("weight", gender, age_days)
+    weight_lms = NutritionService.get_lms_row(weight_table, age_days)
+    expected_weight = weight_lms["M"] if weight_lms is not None else datos_antropo.peso
+    
+    # Calcular requerimientos con peso esperado
+    expected_req = NutritionService.get_energy_requirement(
+        age_days=age_days,
+        weight=expected_weight,
+        gender=gender,
+        feeding_mode='mixed',
+        activity_level='moderate'
+    )
+    
+    # Determinar si necesitamos regenerar nutrient_requirements
+    nutrient_requirements = evaluacion.requerimientos_nutrientes
+    
+    if not nutrient_requirements or len(nutrient_requirements) == 0:
+        print(f"\n===== REGENERANDO NUTRIENT REQUIREMENTS =====")
+        print(f"age_days: {age_days}")
+        print(f"gender: {gender}")
+        print(f"weight: {expected_weight}")
+        print(f"kcal_per_day: {expected_req.get('kcal_per_day') if expected_req else None}")
+        
+        nutrient_requirements = _generate_nutrient_requirements(
+            age_days=age_days,
+            gender=gender,
+            weight=expected_weight,
+            kcal_per_day=expected_req.get("kcal_per_day") if expected_req else None
+        )
+        
+        print(f"Resultado regenerado - type: {type(nutrient_requirements)}")
+        print(f"Resultado regenerado - length: {len(nutrient_requirements) if nutrient_requirements else 0}")
+        if nutrient_requirements:
+            print(f"Primer elemento: {nutrient_requirements[0] if len(nutrient_requirements) > 0 else 'N/A'}")
+        print(f"=============================================\n")
     
     return {
         "assessment": {
@@ -226,12 +280,16 @@ def get_evaluacion_nutricional(seguimiento_id: int, db: Session = Depends(get_db
             },
             "risk_level": evaluacion.nivel_riesgo
         },
-        "energy_requirements": evaluacion.requerimientos_energeticos,
-        "nutrient_requirements": evaluacion.requerimientos_nutrientes,
+        "energy_requirements": expected_req if expected_req else {},
+        "nutrient_requirements": nutrient_requirements,
         "recommendations": {
             "nutritional_recommendations": evaluacion.recomendaciones_nutricionales,
             "general_recommendations": evaluacion.recomendaciones_generales,
             "caregiver_instructions": evaluacion.instrucciones_cuidador
+        },
+        "weight_info": {
+            "current_weight": float(datos_antropo.peso) if datos_antropo and datos_antropo.peso else None,
+            "expected_weight": float(expected_weight) if expected_weight else None
         }
     }
 

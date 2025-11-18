@@ -247,6 +247,11 @@ def get_child_followups(
             "peso": float(datos_antropo.peso) if datos_antropo and datos_antropo.peso else None,
             "estatura": float(datos_antropo.estatura) if datos_antropo and datos_antropo.estatura else None,
             "imc": float(datos_antropo.imc) if datos_antropo and datos_antropo.imc else None,
+            "circunferencia_braquial": float(datos_antropo.circunferencia_braquial) if datos_antropo and datos_antropo.circunferencia_braquial else None,
+            "perimetro_cefalico": float(datos_antropo.perimetro_cefalico) if datos_antropo and datos_antropo.perimetro_cefalico else None,
+            "pliegue_triceps": float(datos_antropo.pliegue_triceps) if datos_antropo and datos_antropo.pliegue_triceps else None,
+            "pliegue_subescapular": float(datos_antropo.pliegue_subescapular) if datos_antropo and datos_antropo.pliegue_subescapular else None,
+            "perimetro_abdominal": float(datos_antropo.perimetro_abdominal) if datos_antropo and datos_antropo.perimetro_abdominal else None,
         }
         result.append(seguimiento_data)
     

@@ -91,6 +91,7 @@ export interface FollowUpForm {
   armCircumference: string
   headCircumference: string
   tricepsFold: string
+  subscapularFold: string
   abdominalPerimeter: string
   // Observaciones clínicas
   symptoms: string[]

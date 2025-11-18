@@ -80,27 +80,28 @@ services:
       retries: 3
 
   # ===== CELERY WORKER (tareas asíncronas) =====
-  celery_worker:
-    build:
-      context: .
-      dockerfile: Dockerfile.backend
-    container_name: nutricion_celery
-    restart: unless-stopped
-    depends_on:
-      - redis
-      - backend
-    environment:
-      DATABASE_URL: ${DATABASE_URL}
-      REDIS_URL: redis://redis:6379/0
-      ANEMIA_ASYNC: "true"
-      PYTHONPATH: /app
-    volumes:
-      - ./backend:/app
-      - ./backend/uploads:/app/uploads
-      - ./backend/models:/app/models
-    networks:
-      - nutricion_network
-    command: celery -A tasks.celery_app worker --loglevel=info
+  # Desactivado temporalmente - no es necesario para funcionalidad principal
+  # celery_worker:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.backend
+  #   container_name: nutricion_celery
+  #   restart: unless-stopped
+  #   depends_on:
+  #     - redis
+  #     - backend
+  #   environment:
+  #     DATABASE_URL: ${DATABASE_URL}
+  #     REDIS_URL: redis://redis:6379/0
+  #     ANEMIA_ASYNC: "true"
+  #     PYTHONPATH: /app
+  #   volumes:
+  #     - ./backend:/app
+  #     - ./backend/uploads:/app/uploads
+  #     - ./backend/models:/app/models
+  #   networks:
+  #     - nutricion_network
+  #   command: celery -A src.tasks.celery_app worker --loglevel=info
 
   # ===== FRONTEND (Next.js) =====
   frontend:

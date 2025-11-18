@@ -489,7 +489,7 @@ export function NewChildForm({ theme, onClose, onSave }: NewChildFormProps) {
             <div className="flex gap-4 pt-4">
               <Button
                 type="submit"
-                className={`flex-1 bg-gradient-to-r ${theme.buttonColor} text-white transition-all duration-300 hover:scale-105`}
+                className="flex-1 bg-gradient-to-r from-blue-500 to-blue-600 text-white transition-all duration-300 hover:scale-105 hover:from-blue-600 hover:to-blue-700"
                 disabled={savingChild}
               >
                 {savingChild ? (

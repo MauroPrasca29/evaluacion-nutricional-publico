@@ -131,7 +131,8 @@ class DatoAntropometrico(Base):
     imc = Column(DECIMAL(5, 2))
     circunferencia_braquial = Column(DECIMAL(5, 2))
     perimetro_cefalico = Column(DECIMAL(5, 2))
-    pliegue_cutaneo = Column(DECIMAL(5, 2))
+    pliegue_triceps = Column(DECIMAL(5, 2))
+    pliegue_subescapular = Column(DECIMAL(5, 2))
     perimetro_abdominal = Column(DECIMAL(5, 2))
 
     seguimiento = relationship("Seguimiento", back_populates="datos_antropometricos")
