@@ -37,14 +37,16 @@ export function UserProfile({ isOpen, onClose, userData }: UserProfileProps) {
 
   // Actualizar profileData cuando userData cambie
   useEffect(() => {
-    if (userData) {
+    if (!userData) return
+    const raf = requestAnimationFrame(() => {
       setProfileData(prev => ({
         ...prev,
         name: userData.nombre,
         email: userData.correo,
         phone: userData.telefono,
       }))
-    }
+    })
+    return () => cancelAnimationFrame(raf)
   }, [userData])
 
   const [notifications, setNotifications] = useState({
