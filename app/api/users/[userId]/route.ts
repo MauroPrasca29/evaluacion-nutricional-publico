@@ -4,9 +4,10 @@ const BACKEND_BASE = process.env.BACKEND_BASE || "http://localhost:8000"
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { userId: string } }
+  { params }: { params: Promise<{ userId: string }> }
 ) {
   try {
+    const { userId } = await params
     const authHeader = request.headers.get("authorization")
     
     if (!authHeader) {
@@ -18,7 +19,7 @@ export async function PUT(
 
     const body = await request.json()
 
-    const response = await fetch(`${BACKEND_BASE}/api/auth/users/${params.userId}`, {
+    const response = await fetch(`${BACKEND_BASE}/api/auth/users/${userId}`, {
       method: "PUT",
       headers: {
         "Authorization": authHeader,
@@ -45,9 +46,10 @@ export async function PUT(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { userId: string } }
+  { params }: { params: Promise<{ userId: string }> }
 ) {
   try {
+    const { userId } = await params
     const authHeader = request.headers.get("authorization")
     
     if (!authHeader) {
@@ -57,7 +59,7 @@ export async function DELETE(
       )
     }
 
-    const response = await fetch(`${BACKEND_BASE}/api/auth/users/${params.userId}`, {
+    const response = await fetch(`${BACKEND_BASE}/api/auth/users/${userId}`, {
       method: "DELETE",
       headers: {
         "Authorization": authHeader,

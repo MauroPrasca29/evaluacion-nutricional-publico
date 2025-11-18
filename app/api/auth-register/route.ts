@@ -2,13 +2,20 @@ const BACKEND_BASE = process.env.BACKEND_BASE || 'http://localhost:8000'
 
 export async function POST(request: Request) {
   try {
+    const authHeader = request.headers.get("authorization")
     const body = await request.json()
+
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json',
+    }
+    
+    if (authHeader) {
+      headers['Authorization'] = authHeader
+    }
 
     const response = await fetch(`${BACKEND_BASE}/api/auth/register`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify(body),
     })
 

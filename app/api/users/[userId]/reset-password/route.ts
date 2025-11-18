@@ -4,8 +4,9 @@ const BACKEND_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:80
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { userId: string } }
+  { params }: { params: Promise<{ userId: string }> }
 ) {
+  const { userId } = await params
   try {
     const authHeader = request.headers.get("authorization")
     if (!authHeader) {
@@ -15,7 +16,7 @@ export async function POST(
     const body = await request.json()
 
     const response = await fetch(
-      `${BACKEND_BASE}/api/auth/users/${params.userId}/reset-password`,
+      `${BACKEND_BASE}/api/auth/users/${userId}/reset-password`,
       {
         method: "POST",
         headers: {

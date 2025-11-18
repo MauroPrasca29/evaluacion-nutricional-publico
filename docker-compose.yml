@@ -45,15 +45,13 @@ services:
     container_name: nutricion_backend
     restart: unless-stopped
     depends_on:
-      db:
-        condition: service_healthy
       redis:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://postgres:nutricion2024@db:5432/nutricion_db
+      DATABASE_URL: ${DATABASE_URL}
       SECRET_KEY: ${SECRET_KEY:-tu_clave_secreta_super_segura}
-      ALGORITHM: HS256
-      ACCESS_TOKEN_EXPIRE_MINUTES: 60
+      ALGORITHM: ${ALGORITHM:-HS256}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-60}
       REDIS_URL: redis://redis:6379/0
       ANEMIA_ASYNC: "true"
       PYTHONPATH: /app
@@ -68,12 +66,10 @@ services:
       - nutricion_network
     command: >
       sh -c "
-        echo '🔄 Esperando base de datos...' &&
-        sleep 5 &&
-        echo '📊 Creando tablas...' &&
+        echo '🔄 Conectando a Railway...' &&
+        sleep 3 &&
+        echo '📊 Verificando tablas...' &&
         python create_tables.py &&
-        echo '👤 Configurando usuario admin...' &&
-        python ensure_admin.py &&
         echo '🚀 Iniciando servidor...' &&
         uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
       "
@@ -94,7 +90,7 @@ services:
       - redis
       - backend
     environment:
-      DATABASE_URL: postgresql://postgres:nutricion2024@db:5432/nutricion_db
+      DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: redis://redis:6379/0
       ANEMIA_ASYNC: "true"
       PYTHONPATH: /app
@@ -118,19 +114,16 @@ services:
     environment:
       NEXT_PUBLIC_API_BASE: http://backend:8000
       BACKEND_BASE: http://backend:8000
-      NODE_ENV: development
+      NODE_ENV: ${NODE_ENV:-development}
     ports:
       - "3000:3000"
     volumes:
-      - ./app:/app/app
-      - ./components:/app/components
-      - ./lib:/app/lib
-      - ./public:/app/public
-      - ./styles:/app/styles
-      - ./types:/app/types
+      - ./:/app
+      - /app/node_modules
+      - /app/.next
     networks:
       - nutricion_network
-    command: npm run dev
+    command: pnpm dev
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000"]
       interval: 30s

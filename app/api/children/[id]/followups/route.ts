@@ -4,11 +4,12 @@ const BACKEND_BASE = process.env.BACKEND_BASE || "http://localhost:8000"
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const response = await fetch(
-      `${BACKEND_BASE}/api/children/${params.id}/followups`,
+      `${BACKEND_BASE}/api/children/${id}/followups`,
       {
         headers: {
           "Content-Type": "application/json",

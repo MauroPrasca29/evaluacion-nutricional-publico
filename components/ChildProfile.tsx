@@ -436,15 +436,16 @@ export function ChildProfile({ child, theme, onBack }: ChildProfileProps) {
                                 phone: child.phone || "N/A",
                                 address: child.address || "N/A",
                                 status: "normal",
-                                lastCheckup: seguimiento.fecha,
+                                lastVisit: seguimiento.fecha,
                                 weight: seguimiento.peso || 0,
                                 height: seguimiento.estatura || 0,
-                                bmi: seguimiento.imc || 0,
+                                medicalHistory: [],
+                                growthHistory: [],
                               }
                               
                               // Crear datos de seguimiento temporales
                               const tempFollowUpData = {
-                                childId: parseInt(child.id),
+                                childId: child.id,
                                 weight: seguimiento.peso?.toString() || "",
                                 height: seguimiento.estatura?.toString() || "",
                                 armCircumference: "",
@@ -493,7 +494,16 @@ export function ChildProfile({ child, theme, onBack }: ChildProfileProps) {
 
         <TabsContent value="crecimiento" className="space-y-6 mt-6">
           {growthHistory.length > 0 ? (
-            <GrowthChart growthHistory={growthHistory} theme={theme} />
+            <GrowthChart 
+              childId={child.id} 
+              data={growthHistory.map(gh => ({
+                date: gh.date,
+                weight: gh.weight,
+                height: gh.height,
+                bmi: gh.bmi,
+                age: 0 // TODO: calcular edad en el momento del seguimiento
+              }))} 
+            />
           ) : (
             <Card className={`${theme.cardBorder} bg-gradient-to-br ${theme.cardBg}`}>
               <CardContent className="py-12 text-center">

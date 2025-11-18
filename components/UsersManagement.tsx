@@ -213,6 +213,13 @@ export function UsersManagement({ theme }: UsersManagementProps) {
       const token = localStorage.getItem("token")
       if (!token) return
 
+      console.log("🔍 Actualizando usuario:", {
+        userId: selectedUser.id_usuario,
+        userName: selectedUser.nombre,
+        userEmail: selectedUser.correo,
+        newData: editUserData
+      })
+
       const response = await fetch(`/api/users/${selectedUser.id_usuario}`, {
         method: "PUT",
         headers: {

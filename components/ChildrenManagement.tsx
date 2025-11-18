@@ -71,20 +71,21 @@ export function ChildrenManagement({ theme }: ChildrenManagementProps) {
   const handleSelectChild = (child: Infante) => {
     // Convertir Infante a Child para mantener compatibilidad con ChildProfile
     const childData: Child = {
-      id: child.id_infante.toString(),
+      id: child.id_infante,
       name: child.nombre,
       age: calculateAge(child.fecha_nacimiento),
-      gender: child.genero === "M" ? "Masculino" : "Femenino",
+      gender: child.genero === "M" ? "masculino" : "femenino",
       birthDate: child.fecha_nacimiento,
       community: child.sede_id ? child.sede_id.toString() : "N/A",
       guardian: child.acudiente_id ? child.acudiente_id.toString() : "N/A",
       phone: "N/A",
       address: "N/A",
-      status: "N/A",
-      lastCheckup: "N/A",
+      status: "normal",
+      lastVisit: "N/A",
       weight: 0,
       height: 0,
-      bmi: 0,
+      medicalHistory: [],
+      growthHistory: [],
     }
     setSelectedChild(childData)
   }

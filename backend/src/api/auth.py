@@ -442,6 +442,11 @@ def update_user(
     # Validar que el usuario actual esté autenticado
     current_user = _get_current_user(db, token)
     
+    print(f"🔍 DEBUG update_user:")
+    print(f"  - current_user (quien hace la petición): {current_user.nombre} (id={current_user.id_usuario}, email={current_user.correo})")
+    print(f"  - user_id (usuario a modificar): {user_id}")
+    print(f"  - user_data: {user_data}")
+    
     # Verificar que el usuario actual sea admin
     _require_admin(current_user)
     
@@ -449,6 +454,8 @@ def update_user(
     target_user = db.query(Usuario).filter(Usuario.id_usuario == user_id).first()
     if not target_user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    
+    print(f"  - target_user ANTES: {target_user.nombre} (id={target_user.id_usuario}, email={target_user.correo}, rol_id={target_user.rol_id})")
     
     # Actualizar campos proporcionados
     if user_data.nombre is not None:
@@ -475,6 +482,8 @@ def update_user(
     target_user.fecha_actualizado = datetime.utcnow()
     db.commit()
     db.refresh(target_user)
+    
+    print(f"  - target_user DESPUÉS: {target_user.nombre} (id={target_user.id_usuario}, email={target_user.correo}, rol_id={target_user.rol_id})")
     
     return target_user
 

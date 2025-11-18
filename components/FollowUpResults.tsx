@@ -171,7 +171,7 @@ export function FollowUpResults({ child, followUpData, theme, onClose, onSaveToP
         age_days: ageDays.toString(),
         weight: followUpData.weight || '0',
         height: followUpData.height || '0',
-        gender: child.gender === 'Masculino' ? 'male' : 'female',
+        gender: child.gender === 'masculino' ? 'male' : 'female',
         head_circumference: followUpData.headCircumference || '0',
         triceps_skinfold: followUpData.tricepsFold || '0',
         subscapular_skinfold: '0',

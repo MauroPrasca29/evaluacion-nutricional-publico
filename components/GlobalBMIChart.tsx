@@ -4,6 +4,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useState } from "react"
+import type { GlobalBMIStats, ThemeColors } from "@/types"
 
 const globalBMIData = [
   { ageGroup: "0-2 años", normal: 45, riesgo: 8, moderado: 3, severo: 1 },
@@ -20,7 +21,12 @@ const sedeData = [
 
 const COLORS = ["#10b981", "#f59e0b", "#ef4444", "#7c2d12"]
 
-export function GlobalBMIChart() {
+interface GlobalBMIChartProps {
+  data?: GlobalBMIStats
+  theme?: ThemeColors
+}
+
+export function GlobalBMIChart({ data, theme }: GlobalBMIChartProps) {
   const [selectedSede, setSelectedSede] = useState("todas")
 
   const pieData = [

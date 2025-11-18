@@ -5,10 +5,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { GlobalBMIChart } from "@/components/GlobalBMIChart"
 import { mockStats, mockGlobalBMIStats, mockAppointments, mockRecentActivity } from "@/data/mockData"
-import { getThemeColors } from "@/utils/theme"
+import type { ThemeColors } from "@/types"
 
-export function Dashboard() {
-  const theme = getThemeColors("dashboard")
+interface DashboardProps {
+  theme: ThemeColors
+  onNewChild?: () => void
+  onNavigate?: (view: string) => void
+}
+
+export function Dashboard({ theme }: DashboardProps) {
 
   const iconMap = {
     "user-plus": <UserPlus className="w-5 h-5 text-blue-500" />,
