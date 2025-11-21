@@ -1,14 +1,7 @@
 // app/api/auth-login/route.ts
 import { NextResponse } from 'next/server'
 
-// PRIORIDAD:
-// 1) BACKEND_BASE   → variable privada del servidor en Vercel
-// 2) NEXT_PUBLIC_API_URL → variable pública del frontend (también válida en SSR)
-// 3) localhost para desarrollo local
-const BACKEND_BASE =
-  process.env.BACKEND_BASE ||
-  process.env.NEXT_PUBLIC_API_URL ||
-  "http://127.0.0.1:8000"
+const BACKEND_BASE = "https://backend-production-73f7.up.railway.app"
 
 export async function POST(request: Request) {
   try {
@@ -25,7 +18,6 @@ export async function POST(request: Request) {
       credentials: 'include',
     })
 
-    // === Leemos texto primero para evitar errores si viene vacío
     const text = await response.text()
     let data: any = {}
 
@@ -60,7 +52,6 @@ export async function POST(request: Request) {
   }
 }
 
-// Preflight CORS para navegadores
 export async function OPTIONS() {
   return new Response(null, {
     status: 204,
