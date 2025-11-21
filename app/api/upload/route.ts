@@ -1,7 +1,11 @@
 // app/api/import/upload/route.ts
 import { NextRequest, NextResponse } from "next/server"
 
-const BACKEND_BASE = process.env.BACKEND_BASE || "http://localhost:8000"
+// 👇 Usamos primero BACKEND_BASE (server-only), luego NEXT_PUBLIC_API_URL, y como último recurso localhost.
+const BACKEND_BASE =
+  process.env.BACKEND_BASE ||
+  process.env.NEXT_PUBLIC_API_URL ||
+  "http://127.0.0.1:8000"
 
 // ⚡ Configuración para permitir requests largos
 export const maxDuration = 300 // 10 minutos (solo en Vercel Pro/Enterprise)
