@@ -1,5 +1,3 @@
-// app/api/children/stats/route.ts
-
 const BACKEND_BASE = "https://backend-production-73f7.up.railway.app"
 
 export async function GET() {
@@ -11,7 +9,7 @@ export async function GET() {
       headers: {
         "Content-Type": "application/json",
       },
-      credentials: "include", // por si el backend usa auth más adelante
+      credentials: "include",
     })
 
     const text = await response.text()
@@ -37,7 +35,7 @@ export async function GET() {
         detail: "Error al obtener estadísticas de niños",
         error: error?.message ?? "Error desconocido",
       }),
-      { status: 500, headers: { "Content-Type": "application/json" } }
+      { status: 500, headers: { "Content-Type": "application/json" } },
     )
   }
 }
