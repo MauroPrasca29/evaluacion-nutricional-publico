@@ -1,34 +1,80 @@
-// Helper para llamadas a la API que añade Authorization automáticamente
-export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  // Obtener token en runtime del cliente
+// lib/api.ts
+
+// ===========================================================
+//    Obtener la URL base del backend FastAPI
+// ===========================================================
+
+export function getApiBase(): string {
+  // 1) URL definida como variable pública (Vercel)
+  const envBase = process.env.NEXT_PUBLIC_API_BASE
+
+  if (envBase && envBase.trim().length > 0) {
+    return envBase
+  }
+
+  // 2) Si estamos en el navegador durante desarrollo local
+  if (typeof window !== "undefined") {
+    const protocol = window.location.protocol
+    return `${protocol}//localhost:8000`
+  }
+
+  // 3) SSR / fallback seguro
+  return "http://localhost:8000"
+}
+
+// ===========================================================
+//    Request con token automático (Bearer from localStorage)
+// ===========================================================
+
+export async function apiFetch(
+  input: RequestInfo | URL,
+  init?: RequestInit
+): Promise<Response> {
   let token: string | null = null
+
+  // Token solo existe en el cliente
   if (typeof window !== "undefined") {
     try {
       token = localStorage.getItem("token")
-    } catch (e) {
-      // ignore
+    } catch {
+      // Ignorar errores de localStorage
     }
   }
 
   const headers = new Headers(init?.headers || {})
+
+  // Inyectar Bearer token si existe
   if (token) {
     headers.set("Authorization", `Bearer ${token}`)
   }
+
   if (!headers.has("Accept")) {
     headers.set("Accept", "application/json")
   }
 
-  const merged: RequestInit = { ...(init || {}), headers }
-  return fetch(input, merged)
+  const mergedInit: RequestInit = {
+    ...(init || {}),
+    headers,
+  }
+
+  return fetch(input, mergedInit)
 }
 
-export async function apiJson(input: RequestInfo | URL, init?: RequestInit) {
+// ===========================================================
+//    JSON Helper con manejo de errores automático
+// ===========================================================
+
+export async function apiJson(
+  input: RequestInfo | URL,
+  init?: RequestInit
+) {
   const res = await apiFetch(input, init)
   const text = await res.text()
+
   let data: any = null
   try {
     data = text ? JSON.parse(text) : null
-  } catch (e) {
+  } catch {
     data = text
   }
 
@@ -40,36 +86,4 @@ export async function apiJson(input: RequestInfo | URL, init?: RequestInit) {
   }
 
   return data
-}
-
-export function getApiBase(): string {
-  const envBase = (process.env.NEXT_PUBLIC_API_BASE as string) || ""
-  if (typeof window === "undefined") {
-    return envBase || "http://localhost:8000"
-  }
-
-  // If running in a Codespaces / preview environment, prefer mapping from -3000 -> -8000
-  try {
-    const host = window.location.hostname
-    if (host.includes("-3000") || host.endsWith(".github.dev")) {
-      // Map preview frontend host to preview backend host
-      if (host.includes("-3000")) {
-        return `${window.location.protocol}//${host.replace("-3000", "-8000")}`
-      }
-    }
-  } catch (e) {
-    // ignore
-  }
-
-  // Otherwise, use envBase if provided
-  if (envBase) {
-    return envBase
-  }
-
-  // Fallbacks for local dev
-  if (typeof window !== "undefined") {
-    if (window.location.port === "3000") return `${window.location.protocol}//${window.location.hostname}:8000`
-    return `${window.location.protocol}//${window.location.hostname}`
-  }
-  return "http://localhost:8000"
 }
