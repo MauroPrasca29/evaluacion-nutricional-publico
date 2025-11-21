@@ -1,25 +1,30 @@
-import { NextResponse } from 'next/server'
+// app/api/children/alerts/count/route.ts
+import { NextResponse } from "next/server"
+
+// 👉 URL base del backend en Railway
+const BACKEND_BASE = "https://backend-production-73f7.up.railway.app"
 
 export async function GET() {
   try {
-    const backendUrl = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8000'
-    const response = await fetch(`${backendUrl}/api/children/alerts/count`, {
+    const response = await fetch(`${BACKEND_BASE}/api/children/alerts/count`, {
+      method: "GET",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
+      // Si en el futuro este endpoint requiere auth por cookie, credentials: "include"
+      // credentials: "include",
     })
 
     if (!response.ok) {
-      return NextResponse.json(
-        { count: 0 },
-        { status: 200 }
-      )
+      // Si el backend falla, devolvemos 0 pero no rompemos el dashboard
+      return NextResponse.json({ count: 0 }, { status: 200 })
     }
 
     const data = await response.json()
-    return NextResponse.json(data)
+    // Backend ya devuelve { "count": n }, lo mandamos tal cual
+    return NextResponse.json(data, { status: 200 })
   } catch (error) {
-    console.error('Error in alerts count route:', error)
+    console.error("Error in alerts count route:", error)
     return NextResponse.json({ count: 0 }, { status: 200 })
   }
 }
