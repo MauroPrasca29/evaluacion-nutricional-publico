@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { GrowthChart } from "@/components/GrowthChart"
 import { FollowUpResults } from "@/components/FollowUpResults"
+import { WHOGrowthChart } from "@/components/WHOGrowthChart"
 import type { Child, ThemeColors, FollowUpForm } from "@/types"
 
 interface ChildProfileProps {
@@ -27,6 +28,11 @@ interface Seguimiento {
   peso?: number
   estatura?: number
   imc?: number
+  circunferencia_braquial?: number
+  perimetro_cefalico?: number
+  pliegue_triceps?: number
+  pliegue_subescapular?: number
+  perimetro_abdominal?: number
 }
 
 interface SedeData {
@@ -119,6 +125,57 @@ export function ChildProfile({ child, theme, onBack }: ChildProfileProps) {
       />
     )
   }
+  
+  // Funciones helper para parsear la observación
+  const parseSymptoms = (observacion: string): string[] => {
+    // Buscar "Síntomas:" seguido de texto hasta "Signos físicos:" o fin
+    const match = observacion.match(/Síntomas:\s*(.+?)(?=,?\s*Signos físicos:|$)/i);
+    if (match && match[1]) {
+      return match[1]
+        .split(',')
+        .map(s => s.trim())
+        .filter(s => s.length > 0);
+    }
+    return [];
+  };
+
+  const parsePhysicalSigns = (observacion: string): string[] => {
+    // Buscar "Signos físicos:" hasta un punto que separa la observación del nutricionista
+    const match = observacion.match(/Signos físicos:\s*(.+?)(?:\.\s+(?=[A-Z])|$)/i);
+    if (match && match[1]) {
+      const text = match[1].trim();
+      // Si termina con punto, quitarlo
+      const cleanText = text.replace(/\.$/, '');
+      return cleanText
+        .split(/,(?![^(]*\))/) // Split por comas que no están dentro de paréntesis
+        .map(s => s.trim())
+        .filter(s => s.length > 0);
+    }
+    return [];
+  };
+
+  const parseClinicalObservations = (observacion: string): string => {
+    // Buscar texto después de un punto que sigue a "Signos físicos: ..."
+    const match = observacion.match(/Signos físicos:\s*.+?\.\s+([A-Z].*)$/i);
+    if (match && match[1]) {
+      return match[1].trim();
+    }
+    
+    // Si no hay signos físicos pero hay síntomas, buscar después del último síntoma
+    const afterSymptoms = observacion.match(/Síntomas:\s*.+?(?:Signos físicos:.*?)?\.\s+([A-Z].*)$/i);
+    if (afterSymptoms && afterSymptoms[1]) {
+      return afterSymptoms[1].trim();
+    }
+    
+    // Si no coincide con ningún patrón, verificar si hay texto sin prefijos
+    const cleaned = observacion
+      .replace(/Síntomas:\s*.+?(?=,?\s*Signos físicos:|$)/gi, '')
+      .replace(/Signos físicos:\s*.+?(?=\.\s+[A-Z]|$)/gi, '')
+      .replace(/^[,.\s]+/, '')
+      .trim();
+    
+    return cleaned;
+  };
 
   const calculateAge = (birthDate: string) => {
     const today = new Date()
@@ -144,7 +201,9 @@ export function ChildProfile({ child, theme, onBack }: ChildProfileProps) {
   }
 
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString)
+    // Dividir la fecha sin crear un objeto Date (evita problemas de timezone)
+    const [year, month, day] = dateString.split('-')
+    const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day))
     return date.toLocaleDateString('es-CO', { 
       year: 'numeric', 
       month: 'long', 
@@ -222,7 +281,7 @@ export function ChildProfile({ child, theme, onBack }: ChildProfileProps) {
 
       {/* Tabs del perfil */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="general" className="flex items-center gap-2">
             <User className="w-4 h-4" />
             General
@@ -234,10 +293,6 @@ export function ChildProfile({ child, theme, onBack }: ChildProfileProps) {
           <TabsTrigger value="crecimiento" className="flex items-center gap-2">
             <TrendingUp className="w-4 h-4" />
             Crecimiento
-          </TabsTrigger>
-          <TabsTrigger value="reportes" className="flex items-center gap-2">
-            <Calendar className="w-4 h-4" />
-            Estadísticas
           </TabsTrigger>
         </TabsList>
 
@@ -448,13 +503,14 @@ export function ChildProfile({ child, theme, onBack }: ChildProfileProps) {
                                 childId: child.id,
                                 weight: seguimiento.peso?.toString() || "",
                                 height: seguimiento.estatura?.toString() || "",
-                                armCircumference: "",
-                                headCircumference: "",
-                                tricepsFold: "",
-                                abdominalPerimeter: "",
-                                symptoms: [],
-                                physicalSigns: [],
-                                clinicalObservations: seguimiento.observacion || "",
+                                armCircumference: seguimiento.circunferencia_braquial?.toString() || "",
+                                headCircumference: seguimiento.perimetro_cefalico?.toString() || "",
+                                tricepsFold: seguimiento.pliegue_triceps?.toString() || "",
+                                subscapularFold: seguimiento.pliegue_subescapular?.toString() || "",
+                                abdominalPerimeter: seguimiento.perimetro_abdominal?.toString() || "",
+                                symptoms: parseSymptoms(seguimiento.observacion || ""),
+                                physicalSigns: parsePhysicalSigns(seguimiento.observacion || ""),
+                                clinicalObservations: parseClinicalObservations(seguimiento.observacion || ""),
                                 hemoglobin: "",
                                 stoolExam: "",
                                 urineExam: "",
@@ -471,7 +527,7 @@ export function ChildProfile({ child, theme, onBack }: ChildProfileProps) {
                                 seguimientoId: seguimiento.id_seguimiento
                               })
                             }}
-                            className={`bg-gradient-to-r ${theme.buttonColor} text-white hover:scale-105 transition-transform`}
+                            className="bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:scale-105 transition-transform hover:from-blue-600 hover:to-blue-700"
                           >
                             <FileText className="w-4 h-4 mr-2" />
                             Ver Evaluación Nutricional Completa
@@ -493,96 +549,46 @@ export function ChildProfile({ child, theme, onBack }: ChildProfileProps) {
         </TabsContent>
 
         <TabsContent value="crecimiento" className="space-y-6 mt-6">
-          {growthHistory.length > 0 ? (
-            <GrowthChart 
-              childId={child.id} 
-              data={growthHistory.map(gh => ({
-                date: gh.date,
-                weight: gh.weight,
-                height: gh.height,
-                bmi: gh.bmi,
-                age: 0 // TODO: calcular edad en el momento del seguimiento
-              }))} 
-            />
+          {seguimientos.length > 0 ? (
+            <div className="space-y-6">
+              {/* Gráficas de crecimiento WHO con todos los puntos */}
+              {(() => {
+                const ageDays = (() => {
+                  const birth = new Date(child.birthDate)
+                  const today = new Date()
+                  return Math.floor((today.getTime() - birth.getTime()) / (1000 * 60 * 60 * 24))
+                })()
+                const gender = child.gender === 'masculino' ? 'male' : 'female'
+                const ageYears = ageDays / 365
+
+                // Determinar qué gráficas mostrar según la edad
+                const chartTypes: Array<'weight' | 'height' | 'bmi' | 'head_circumference' | 'triceps_skinfold' | 'subscapular_skinfold'> = ['weight', 'height', 'bmi']
+                if (ageYears <= 5) {
+                  chartTypes.push('head_circumference', 'triceps_skinfold', 'subscapular_skinfold')
+                }
+
+                return chartTypes.map((chartType) => (
+                  <WHOGrowthChart
+                    key={chartType}
+                    chartType={chartType}
+                    gender={gender}
+                    seguimientos={seguimientos}
+                    childBirthDate={child.birthDate}
+                  />
+                ))
+              })()}
+            </div>
           ) : (
             <Card className={`${theme.cardBorder} bg-gradient-to-br ${theme.cardBg}`}>
               <CardContent className="py-12 text-center">
                 <TrendingUp className="w-16 h-16 text-slate-300 mx-auto mb-4" />
                 <p className="text-slate-600">No hay datos de crecimiento disponibles.</p>
-                <p className="text-sm text-slate-500 mt-2">Se necesitan al menos dos seguimientos con mediciones para generar el gráfico.</p>
+                <p className="text-sm text-slate-500 mt-2">Los gráficos aparecerán cuando haya seguimientos registrados.</p>
               </CardContent>
             </Card>
           )}
         </TabsContent>
-
-        <TabsContent value="reportes" className="space-y-6 mt-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <Card className={`${theme.cardBorder} bg-gradient-to-br ${theme.cardBg}`}>
-              <CardHeader>
-                <CardTitle className="text-lg font-bold text-slate-800">Generar Reportes</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <Button 
-                  variant="outline" 
-                  className={`${theme.cardBorder} w-full hover:bg-opacity-50 bg-transparent transition-all duration-300 hover:scale-105`}
-                  disabled
-                >
-                  <FileText className="w-4 h-4 mr-2" />
-                  Reporte Individual PDF
-                </Button>
-                <Button 
-                  variant="outline" 
-                  className={`${theme.cardBorder} w-full hover:bg-opacity-50 bg-transparent transition-all duration-300 hover:scale-105`}
-                  disabled
-                >
-                  <TrendingUp className="w-4 h-4 mr-2" />
-                  Gráfico de Crecimiento
-                </Button>
-                <p className="text-xs text-slate-500 text-center">Funcionalidad en desarrollo</p>
-              </CardContent>
-            </Card>
-            <Card className={`${theme.cardBorder} bg-gradient-to-br from-white to-blue-50`}>
-              <CardHeader>
-                <CardTitle className="text-lg font-bold text-slate-800">Estadísticas</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex justify-between">
-                  <span className="text-slate-600">Total de seguimientos:</span>
-                  <span className="font-bold text-slate-800">{seguimientos.length}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-600">Mediciones registradas:</span>
-                  <span className="font-bold text-slate-800">
-                    {seguimientos.filter(s => s.peso && s.estatura).length}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-600">Primer registro:</span>
-                  <span className="font-bold text-slate-800">
-                    {seguimientos.length > 0 
-                      ? new Date(seguimientos.sort((a, b) => 
-                          new Date(a.fecha).getTime() - new Date(b.fecha).getTime()
-                        )[0].fecha).toLocaleDateString('es-CO')
-                      : "N/A"
-                    }
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-600">Última actualización:</span>
-                  <span className="font-bold text-slate-800">
-                    {seguimientos.length > 0 
-                      ? new Date(seguimientos.sort((a, b) => 
-                          new Date(b.fecha).getTime() - new Date(a.fecha).getTime()
-                        )[0].fecha).toLocaleDateString('es-CO')
-                      : "N/A"
-                    }
-                  </span>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-      </Tabs>
-    </div>
-  )
+              </Tabs>
+            </div>
+          )
 }

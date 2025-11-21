@@ -18,11 +18,15 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
-from fastapi import APIRouter, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile, Depends
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+from sqlalchemy.orm import Session
+from src.db.session import get_db
+from src.services.activity_service import ActivityService
+
 
 # --------------------------------------------------------------------------------------
 # Config
@@ -292,123 +296,112 @@ async def import_excel_file(
 
 @router.get("/template", summary="Descargar plantilla Excel")
 async def download_template():
-    import openpyxl
-    from openpyxl.utils import get_column_letter
-    from openpyxl.worksheet.datavalidation import DataValidation
+    """Descargar plantilla Excel con todas las columnas necesarias"""
+    from src.services.excel_service import ExcelService
+    
+    try:
+        # Usar el servicio actualizado para generar la plantilla
+        excel_bytes = ExcelService.generate_template()
+        
+        # Crear respuesta con el archivo
+        output = io.BytesIO(excel_bytes)
+        output.seek(0)
+        
+        headers = {"Content-Disposition": 'attachment; filename="plantilla_importacion_completa.xlsx"'}
+        return StreamingResponse(
+            output,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers=headers,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al generar plantilla: {str(e)}")
 
-    # Datos de ejemplo
-    data = [
-        {
-            "Tipo de documento": "CC",
-            "Número de documento": "12345678",
-            "Nombres": "NOMBRE",
-            "Apellidos": "APELLIDO",
-            "Género": "Femenino",  # Opciones: Femenino, Masculino
-            "Fecha de nacimiento": "2015-01-01",
-            "Talla (cm)": 120,
-            "Peso (kg)": 23.5,
-            "Pliegue subescapular (mm)": 8.0,
-            "Perímetro cefálico (cm)": 48.5,
-            "Pliegue cutáneo tricipital (mm)": 7.2,
-            "Nivel de actividad": "Moderada",  # Opciones: Ligera, Moderada, Vigorosa
-            "Tipo de alimentación": "Alimentados con leche materna",  # Opciones: Alimentados con leche materna, Alimentados con fórmula, Alimentados con leche materna + fórmula (todos), NA
-            "Comentarios del cuidador": "Texto libre",
-            "Notas": "Texto libre",
-        }
-    ]
+import time as time_module
 
-    # Opciones para listas desplegables
-    genero_opciones = ["Femenino", "Masculino"]
-    alimentacion_opciones = [
-        "Alimentados con leche materna",
-        "Alimentados con fórmula",
-        "Alimentados con leche materna + fórmula (todos)",
-        "NA",
-    ]
-    actividad_opciones = ["Ligera", "Moderada", "Vigorosa"]
+@router.post("/upload", summary="Cargar Excel e insertar infantes y seguimientos")
+async def upload_children_excel(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+) -> JSONResponse:
+    """
+    Procesa un archivo Excel con datos de infantes, acudientes y seguimientos.
+    Valida cada fila, crea/busca acudientes e infantes, y genera seguimientos con evaluaciones nutricionales.
+    """
+    filename = (file.filename or "").strip()
+    if not filename or not filename.lower().endswith(ALLOWED_EXTS):
+        raise HTTPException(status_code=400, detail="Formato de archivo inválido. Use .xlsx o .xls")
 
-    # Crear DataFrame
-    df = pd.DataFrame(data)
+    # ⏱️ Iniciar contador de tiempo
+    start_time = time_module.time()
+    
+    try:
+        print(f"📥 Recibiendo archivo: {filename}")
+        
+        # Leer contenido del archivo
+        content = await file.read()
+        file_size_mb = len(content) / (1024 * 1024)
+        print(f"📊 Tamaño del archivo: {file_size_mb:.2f} MB")
+        
+        # Procesar con ExcelService
+        from src.services.excel_service import ExcelService
+        
+        print(f"⚙️ Iniciando procesamiento con ExcelService...")
+        processing_start = time_module.time()
+        
+        result = ExcelService.process_children_excel(content, db)
+        
+        processing_time = time_module.time() - processing_start
+        print(f"✅ Procesamiento completado en {processing_time:.2f} segundos")
+        
+        if not result["success"]:
+            raise HTTPException(status_code=400, detail=result.get("error", "Error al procesar el archivo"))
+        
+        # Después de procesar el Excel - registrar actividad
+        sede_nombre = "Importación Excel"
+        if result.get("data") and len(result["data"]) > 0:
+            # Intentar obtener sede_id del primer registro procesado
+            primer_registro = result["data"][0]
+            sede_id = primer_registro.get("sede_id")
+            if sede_id:
+                from src.db.models import Sede
+                sede = db.query(Sede).filter(Sede.id_sede == sede_id).first()
+                if sede:
+                    sede_nombre = sede.nombre
 
-    # Crear Excel en memoria
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name="Plantilla")
-
-    output.seek(0)
-    wb = openpyxl.load_workbook(output)
-    ws = wb.active
-
-    # Ajustar ancho de columnas al texto
-    for col in ws.columns:
-        max_length = 0
-        col_letter = get_column_letter(col[0].column)
-        for cell in col:
-            try:
-                cell_length = len(str(cell.value))
-                if cell_length > max_length:
-                    max_length = cell_length
-            except Exception:
-                pass
-        adjusted_width = max_length + 2
-        ws.column_dimensions[col_letter].width = adjusted_width
-
-    # Agregar listas desplegables (validación de datos)
-    # Buscar las columnas por nombre
-    headers = [cell.value for cell in ws[1]]
-    col_genero = headers.index("Género") + 1
-    col_alimentacion = headers.index("Tipo de alimentación") + 1
-    col_actividad = headers.index("Nivel de actividad") + 1
-
-    # Rango de filas (desde la segunda hasta la 100 por defecto)
-    max_row = 100
-
-    # Género
-    dv_genero = DataValidation(
-        type="list",
-        formula1='"{}"'.format(",".join(genero_opciones)),
-        showErrorMessage=True,
-        errorTitle="Valor inválido",
-        error="Solo puedes seleccionar uno de los valores de la lista.",
-
-    )
-    ws.add_data_validation(dv_genero)
-    dv_genero.add(f"{get_column_letter(col_genero)}2:{get_column_letter(col_genero)}{max_row}")
-    # Tipo de alimentación
-    dv_alimentacion = DataValidation(
-        type="list",
-        formula1='"{}"'.format(",".join(alimentacion_opciones)),
-        showErrorMessage=True,
-        errorTitle="Valor inválido",
-        error="Solo puedes seleccionar uno de los valores de la lista.",
-
-    )
-    ws.add_data_validation(dv_alimentacion)
-    dv_alimentacion.add(f"{get_column_letter(col_alimentacion)}2:{get_column_letter(col_alimentacion)}{max_row}")
-
-    # Nivel de actividad
-    dv_actividad = DataValidation(
-        type="list",
-        formula1='"{}"'.format(",".join(actividad_opciones)),
-        showErrorMessage=True,
-        errorTitle="Valor inválido",
-        error="Solo puedes seleccionar uno de los valores de la lista.",
-
-    )
-    ws.add_data_validation(dv_actividad)
-    dv_actividad.add(f"{get_column_letter(col_actividad)}2:{get_column_letter(col_actividad)}{max_row}")
-
-    # Guardar el archivo ajustado en memoria
-    final_output = io.BytesIO()
-    wb.save(final_output)
-    final_output.seek(0)
-
-    headers = {"Content-Disposition": 'attachment; filename="plantilla_importacion.xlsx"'}
-    return StreamingResponse(
-        final_output,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers=headers,
-    )
+        print(f"📝 Registrando actividad en el sistema...")
+        ActivityService.registrar_importacion(
+            db=db,
+            sede_nombre=sede_nombre,
+            cantidad=result.get("processed_count", 0),
+            usuario_id=1  # TODO: Obtener del token JWT
+        )
+        
+        # ⏱️ Calcular tiempo total
+        total_time = time_module.time() - start_time
+        print(f"🎉 Importación completada exitosamente en {total_time:.2f} segundos")
+        
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "filename": filename,
+                "total_rows": result.get("total_rows", 0),
+                "processed_count": result.get("processed_count", 0),
+                "error_count": result.get("error_count", 0),
+                "errors": result.get("errors", []),
+                "data": result.get("data", []),
+                "processing_time": round(total_time, 2)  # ⏱️ Agregar tiempo de procesamiento
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        elapsed = time_module.time() - start_time
+        print(f"❌ Error después de {elapsed:.2f} segundos: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error inesperado al procesar el archivo: {str(e)}")
 
 @router.get("/status/{import_id}", summary="Consultar estado de import")
 async def get_import_status(import_id: str):
@@ -435,4 +428,5 @@ async def search_in_import(
     if not store.load():
         raise HTTPException(status_code=404, detail="No existe vector store para ese import_id")
     results = store.search(q, top_k=top_k)
+
     return [SearchResult(row_index=i, score=s, payload=store.payloads[i]) for i, s in results]

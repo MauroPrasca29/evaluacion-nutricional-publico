@@ -1,10 +1,10 @@
 "use client"
 
-import { Users, AlertTriangle, ClipboardList, Calendar, UserPlus, FileText, Upload } from 'lucide-react'
+import { Users, AlertTriangle, UserPlus, FileText, Upload } from 'lucide-react'
+import { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
 import { GlobalBMIChart } from "@/components/GlobalBMIChart"
-import { mockStats, mockGlobalBMIStats, mockAppointments, mockRecentActivity } from "@/data/mockData"
+import { mockGlobalBMIStats, mockRecentActivity } from "@/data/mockData"
 import type { ThemeColors } from "@/types"
 
 interface DashboardProps {
@@ -13,7 +13,45 @@ interface DashboardProps {
   onNavigate?: (view: string) => void
 }
 
+interface DashboardStats {
+  total_children: number
+  active_alerts: number
+}
+
 export function Dashboard({ theme }: DashboardProps) {
+  const [stats, setStats] = useState<DashboardStats>({
+    total_children: 0,
+    active_alerts: 0
+  })
+  const [loading, setLoading] = useState(true)
+  const [recentActivity, setRecentActivity] = useState<any[]>([])
+
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const [statsRes, activityRes] = await Promise.all([
+          fetch('/api/children/stats'),
+          fetch('/api/children/recent-activity')
+        ])
+        
+        if (statsRes.ok) {
+          const data = await statsRes.json()
+          setStats(data)
+        }
+        
+        if (activityRes.ok) {
+          const data = await activityRes.json()
+          setRecentActivity(data)
+        }
+      } catch (error) {
+        console.error('Error cargando datos:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchStats()
+  }, [])
 
   const iconMap = {
     "user-plus": <UserPlus className="w-5 h-5 text-blue-500" />,
@@ -30,16 +68,18 @@ export function Dashboard({ theme }: DashboardProps) {
         <p className="text-slate-600">Resumen del estado nutricional y actividades de la institución.</p>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid gap-6 md:grid-cols-3">
+      {/* Stats Cards - Solo Total de Niños y Alertas Activas */}
+      <div className="grid gap-6 md:grid-cols-2">
         <Card className={`${theme.cardBorder} bg-gradient-to-br ${theme.cardBg}`}>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-slate-600">Total de Niños</CardTitle>
             <Users className="h-5 w-5 text-blue-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-slate-800">{mockStats.totalChildren}</div>
-            <p className="text-xs text-slate-500">+2% que el mes pasado</p>
+            <div className="text-3xl font-bold text-slate-800">
+              {loading ? '...' : stats.total_children}
+            </div>
+            <p className="text-xs text-slate-500">Registrados en el sistema</p>
           </CardContent>
         </Card>
         <Card className={`${theme.cardBorder} bg-gradient-to-br ${theme.cardBg}`}>
@@ -48,85 +88,47 @@ export function Dashboard({ theme }: DashboardProps) {
             <AlertTriangle className="h-5 w-5 text-orange-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-slate-800">{mockStats.activeAlerts}</div>
-            <p className="text-xs text-slate-500">3 nuevas esta semana</p>
-          </CardContent>
-        </Card>
-        <Card className={`${theme.cardBorder} bg-gradient-to-br ${theme.cardBg}`}>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-slate-600">Evaluaciones Pendientes</CardTitle>
-            <ClipboardList className="h-5 w-5 text-yellow-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold text-slate-800">{mockStats.pendingAssessments}</div>
-            <p className="text-xs text-slate-500">5 vencen esta semana</p>
+            <div className="text-3xl font-bold text-slate-800">
+              {loading ? '...' : stats.active_alerts}
+            </div>
+            <p className="text-xs text-slate-500">Niños con riesgo alto</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Main Grid */}
-      <div className="grid gap-8 lg:grid-cols-3">
-        {/* Global BMI Chart */}
-        <div className="lg:col-span-2">
-          <GlobalBMIChart data={mockGlobalBMIStats} theme={theme} />
-        </div>
-
-        {/* Side Column */}
-        <div className="space-y-8">
-          {/* Próximos Seguimientos */}
-          <Card className={`${theme.cardBorder} bg-gradient-to-br ${theme.cardBg}`}>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <Calendar className="w-5 h-5 text-indigo-500" />
-                Próximos Seguimientos
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {mockAppointments.slice(0, 4).map((item) => (
-                <div key={item.id} className="flex items-center gap-4">
-                  <div className="flex-shrink-0 bg-indigo-100 rounded-lg p-2">
-                    <Calendar className="w-5 h-5 text-indigo-600" />
-                  </div>
-                  <div>
-                    <p className="font-semibold text-slate-800">{item.child}</p>
-                    <p className="text-sm text-slate-500">
-                      {item.time} - {item.type}
-                    </p>
-                  </div>
-                  <Badge variant="outline" className="ml-auto">
-                    {new Date(item.date).toLocaleDateString("es-ES", { day: "2-digit", month: "short" })}
-                  </Badge>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-
-          {/* Actividad Reciente */}
-          <Card className={`${theme.cardBorder} bg-gradient-to-br ${theme.cardBg}`}>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <FileText className="w-5 h-5 text-green-500" />
-                Actividad Reciente
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {mockRecentActivity.map((activity) => (
-                <div key={activity.id} className="flex items-start gap-4">
-                  <div className="flex-shrink-0 bg-slate-100 rounded-full p-2 mt-1">
-                    {iconMap[activity.icon as keyof typeof iconMap]}
-                  </div>
-                  <div>
-                    <p className="text-sm text-slate-600">
-                      {activity.text} <span className="font-semibold text-slate-800">{activity.subject}</span>
-                    </p>
-                    <p className="text-xs text-slate-400">{activity.time}</p>
-                  </div>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        </div>
+      {/* Global BMI Chart - Ahora ocupa todo el ancho */}
+      <div>
+        <GlobalBMIChart theme={theme} />
       </div>
+
+      {/* Actividad Reciente - Ahora como sección completa */}
+      <Card className={`${theme.cardBorder} bg-gradient-to-br ${theme.cardBg}`}>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <FileText className="w-5 h-5 text-green-500" />
+            Actividad Reciente
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-4 md:grid-cols-2">
+          {recentActivity.map((activity) => (
+            <div key={activity.id} className="flex items-start gap-4">
+              <div className="flex-shrink-0 bg-slate-100 rounded-full p-2 mt-1">
+                {iconMap[activity.icon as keyof typeof iconMap]}
+              </div>
+              <div className="flex-1">
+                <p className="text-sm text-slate-600">
+                  {activity.text} <span className="font-semibold text-slate-800">{activity.subject}</span>
+                </p>
+                <p className="text-xs text-slate-400">
+                  {activity.usuario && <span className="font-medium">{activity.usuario}</span>}
+                  {activity.usuario && ' • '}
+                  {activity.time}
+                </p>
+              </div>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
     </div>
   )
 }

@@ -1,6 +1,7 @@
 "use client"
 
-import { Home, Users, BarChart3, UserPlus, Upload, UserCog } from "lucide-react"
+import { Home, Users, UserPlus, Upload, UserCog } from "lucide-react"
+import Image from "next/image"
 import type { MenuItem } from "@/types"
 
 interface AppSidebarProps {
@@ -30,15 +31,6 @@ export function AppSidebar({ currentView, setCurrentView, isOpen, setIsOpen, isA
       bgColor: "bg-blue-50",
       hoverColor: "hover:bg-blue-100",
       borderColor: "border-blue-200",
-    },
-    {
-      id: "reports",
-      label: "Estadísticas",
-      icon: BarChart3,
-      color: "from-green-400 to-green-500",
-      bgColor: "bg-green-50",
-      hoverColor: "hover:bg-green-100",
-      borderColor: "border-green-200",
     },
     {
       id: "new-followup",
@@ -84,13 +76,10 @@ export function AppSidebar({ currentView, setCurrentView, isOpen, setIsOpen, isA
 
       {/* Sidebar */}
       <aside
-        className={`fixed inset-y-0 left-0 w-64 z-50 transform transition-transform duration-300 lg:translate-x-0 lg:relative lg:z-auto ${
+        className={`fixed inset-y-0 left-0 w-64 z-50 transform transition-transform duration-300 lg:translate-x-0 lg:sticky lg:top-0 lg:h-screen lg:z-auto ${
           isOpen ? "translate-x-0" : "-translate-x-full"
         } border-r ${currentItem.borderColor} bg-gradient-to-b ${currentItem.bgColor} to-white flex flex-col lg:flex-shrink-0`}
       >
-        {/* Header del sidebar */}
-        
-
         {/* Menú de navegación */}
         <nav className="flex-1 p-3 overflow-y-auto">
           <div className="space-y-2">
@@ -113,7 +102,14 @@ export function AppSidebar({ currentView, setCurrentView, isOpen, setIsOpen, isA
             ))}
           </div>
         </nav>
+
+        {/* Logo en la parte inferior */}
+        <div className="p-4 border-t border-slate-200">
+          <div className="flex items-center justify-center">
+            <img src="/logo.png" alt="Logo" className="h-12 w-auto object-contain" />
+          </div>
+        </div>
       </aside>
     </>
   )
-}
+} 

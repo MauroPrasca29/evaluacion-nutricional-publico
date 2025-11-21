@@ -148,7 +148,8 @@ class DatoAntropometricoBase(BaseModel):
     imc: Optional[float] = None
     circunferencia_braquial: Optional[float] = None
     perimetro_cefalico: Optional[float] = None
-    pliegue_cutaneo: Optional[float] = None
+    pliegue_triceps: Optional[float] = None
+    pliegue_subescapular: Optional[float] = None
     perimetro_abdominal: Optional[float] = None
 
 

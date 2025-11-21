@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useState, useEffect } from "react"
@@ -37,6 +38,7 @@ export function AppHeader({ theme, setSidebarOpen }: AppHeaderProps) {
   const [showProfile, setShowProfile] = useState(false)
   const [userData, setUserData] = useState<UserData | null>(null)
   const [loading, setLoading] = useState(true)
+  const [alertsCount, setAlertsCount] = useState(0)
 
   useEffect(() => {
     // Obtener datos del usuario autenticado
@@ -74,7 +76,27 @@ export function AppHeader({ theme, setSidebarOpen }: AppHeaderProps) {
     }
 
     fetchUserData()
+    fetchAlertsCount()
+
+    // Actualizar conteo de alertas cada 30 segundos
+    const interval = setInterval(() => {
+      fetchAlertsCount()
+    }, 30000)
+
+    return () => clearInterval(interval)
   }, [router])
+
+  const fetchAlertsCount = async () => {
+    try {
+      const response = await fetch("/api/children/alerts/count")
+      if (response.ok) {
+        const data = await response.json()
+        setAlertsCount(data.count || 0)
+      }
+    } catch (error) {
+      console.error("Error fetching alerts count:", error)
+    }
+  }
 
   const handleLogout = () => {
     // Limpiar token de localStorage y cookies
@@ -82,6 +104,12 @@ export function AppHeader({ theme, setSidebarOpen }: AppHeaderProps) {
     document.cookie = "token=; path=/; max-age=0"
     // Redirigir a login
     router.push("/login")
+  }
+
+  const handleNotificationsOpen = () => {
+    setShowNotifications(true)
+    // Actualizar conteo al abrir
+    fetchAlertsCount()
   }
 
   // Función para obtener las iniciales del nombre
@@ -109,9 +137,14 @@ export function AppHeader({ theme, setSidebarOpen }: AppHeaderProps) {
             >
               <Menu className="w-5 h-5" />
             </Button>
-            <div>
-              <h1 className="text-xl font-bold text-white">Evaluación Nutricional Infantil</h1>
-              <p className="text-sm text-white/80">Sistema de seguimiento para comunidades vulnerables</p>
+            
+            {/* Logo */}
+            <div className="flex items-center gap-3">
+              <img src="/logo-header.png" alt="Logo" className="h-12 w-auto object-contain" />
+              <div>
+                <h1 className="text-xl font-bold text-white">Evaluación Nutricional Infantil</h1>
+                <p className="text-sm text-white/80">Sistema de seguimiento para comunidades vulnerables</p>
+              </div>
             </div>
           </div>
 
@@ -120,12 +153,14 @@ export function AppHeader({ theme, setSidebarOpen }: AppHeaderProps) {
               variant="ghost"
               size="icon"
               className="relative hover:bg-white/20 rounded-lg text-white"
-              onClick={() => setShowNotifications(true)}
+              onClick={handleNotificationsOpen}
             >
               <Bell className="w-5 h-5" />
-              <span className="absolute -top-1 -right-1 w-3 h-3 bg-orange-500 rounded-full flex items-center justify-center">
-                <span className="text-xs text-white font-bold">3</span>
-              </span>
+              {alertsCount > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-[20px] h-5 bg-orange-500 rounded-full flex items-center justify-center px-1">
+                  <span className="text-xs text-white font-bold">{alertsCount > 9 ? '9+' : alertsCount}</span>
+                </span>
+              )}
             </Button>
 
             <DropdownMenu>
@@ -171,7 +206,7 @@ export function AppHeader({ theme, setSidebarOpen }: AppHeaderProps) {
       </header>
 
       {/* Panels */}
-      <NotificationPanel isOpen={showNotifications} onClose={() => setShowNotifications(false)} />
+      <NotificationPanel isOpen={showNotifications} onClose={() => setShowNotifications(false)} onAlertsUpdate={fetchAlertsCount} />
       <UserProfile isOpen={showProfile} onClose={() => setShowProfile(false)} userData={userData} />
     </>
   )

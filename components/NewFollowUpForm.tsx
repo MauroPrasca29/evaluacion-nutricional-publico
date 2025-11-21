@@ -35,6 +35,7 @@ export function NewFollowUpForm({ theme }: NewFollowUpFormProps) {
   const [showResults, setShowResults] = useState(false)
   const [children, setChildren] = useState<Infante[]>([])
   const [loading, setLoading] = useState(true)
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const [formData, setFormData] = useState<FollowUpForm>({
     childId: 0,
     weight: "",
@@ -42,6 +43,7 @@ export function NewFollowUpForm({ theme }: NewFollowUpFormProps) {
     armCircumference: "",
     headCircumference: "",
     tricepsFold: "",
+    subscapularFold: "",
     abdominalPerimeter: "",
     symptoms: [],
     physicalSigns: [],
@@ -167,6 +169,15 @@ export function NewFollowUpForm({ theme }: NewFollowUpFormProps) {
     return observaciones
   }
 
+
+  const getLocalDateString = () => {
+    const now = new Date()
+    const year = now.getFullYear()
+    const month = String(now.getMonth() + 1).padStart(2, '0')
+    const day = String(now.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
@@ -177,19 +188,22 @@ export function NewFollowUpForm({ theme }: NewFollowUpFormProps) {
       return
     }
 
+    setIsSubmitting(true) // NUEVO: Bloquear botón
+
     try {
       const observacionesClinicas = getObservacionesClinicas()
       
       const seguimientoData = {
         infante_id: formData.childId,
-        fecha: new Date().toISOString().split('T')[0],
+        fecha: getLocalDateString(),
         observacion: formData.clinicalObservations || "",
         observaciones_clinicas: observacionesClinicas,
         peso: parseFloat(formData.weight) || null,
         estatura: parseFloat(formData.height) || null,
         circunferencia_braquial: parseFloat(formData.armCircumference) || null,
         perimetro_cefalico: parseFloat(formData.headCircumference) || null,
-        pliegue_cutaneo: parseFloat(formData.tricepsFold) || null,
+        pliegue_triceps: parseFloat(formData.tricepsFold) || null,
+        pliegue_subescapular: parseFloat(formData.subscapularFold) || null,
         perimetro_abdominal: parseFloat(formData.abdominalPerimeter) || null,
         hemoglobina: parseFloat(formData.hemoglobin) || null,
         foto_ojo_url: null
@@ -210,15 +224,13 @@ export function NewFollowUpForm({ theme }: NewFollowUpFormProps) {
         const result = await response.json()
         console.log("Seguimiento creado exitosamente:", result)
         
-        // **LÍNEA IMPORTANTE: Guardar el ID del seguimiento**
         sessionStorage.setItem('last_seguimiento_id', result.id_seguimiento.toString())
         
         toast.success("¡Seguimiento registrado exitosamente!", {
-          description: `ID del seguimiento: ${result.id_seguimiento}`,
+          description: `Se realizó un seguimiento nutricional a ${selectedChild.name}`,
           duration: 4000,
         })
         
-        // Mostrar la pantalla de resultados
         setShowResults(true)
       } else {
         const error = await response.json()
@@ -234,12 +246,33 @@ export function NewFollowUpForm({ theme }: NewFollowUpFormProps) {
         description: "No se pudo conectar con el servidor. Verifica tu conexión.",
         duration: 5000,
       })
+    } finally {
+      setIsSubmitting(false) // NUEVO: Desbloquear botón
     }
   }
 
   const handleSaveToProfile = () => {
-    // Esta función ya no es necesaria, eliminamos setShowResults(true) del handleSubmit
-    console.log("Guardando en perfil del niño:", selectedChild?.id)
+    setShowResults(false)
+    setSelectedChild(null) // NUEVO: Resetear para volver a la lista
+    setFormData({
+      childId: 0,
+      weight: "",
+      height: "",
+      armCircumference: "",
+      headCircumference: "",
+      tricepsFold: "",
+      subscapularFold: "",
+      abdominalPerimeter: "",
+      symptoms: [],
+      physicalSigns: [],
+      clinicalObservations: "",
+      hemoglobin: "",
+      stoolExam: "",
+      urineExam: "",
+      eyePhotos: [],
+      gumPhotos: [],
+      caregiverComments: "",
+    })
   }
 
   const getInitials = (nombre: string): string => {
@@ -457,6 +490,18 @@ export function NewFollowUpForm({ theme }: NewFollowUpFormProps) {
                     />
                   </div>
                   <div className="space-y-2">
+                    <Label htmlFor="subscapularFold">Pliegue Cutáneo Subescapular (mm)</Label>
+                    <Input
+                      id="subscapularFold"
+                      type="number"
+                      step="0.1"
+                      placeholder="10.5"
+                      value={formData.subscapularFold}
+                      onChange={(e) => setFormData({ ...formData, subscapularFold: e.target.value })}
+                      className="border-amber-200 focus:border-amber-400"
+                    />
+                  </div>
+                  <div className="space-y-2">
                     <Label htmlFor="abdominalPerimeter">Perímetro Abdominal (cm)</Label>
                     <Input
                       id="abdominalPerimeter"
@@ -600,10 +645,20 @@ export function NewFollowUpForm({ theme }: NewFollowUpFormProps) {
             <div className="flex gap-4 justify-center pt-6">
               <Button
                 onClick={handleSubmit}
-                className={`px-8 py-3 bg-gradient-to-r ${theme.buttonColor} text-white font-semibold rounded-xl transition-all duration-300 hover:scale-105 shadow-lg`}
+                disabled={isSubmitting} // NUEVO
+                className={`px-8 py-3 bg-gradient-to-r ${theme.buttonColor} text-white font-semibold rounded-xl transition-all duration-300 hover:scale-105 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100`}
               >
-                <Save className="w-5 h-5 mr-2" />
-                Finalizar Seguimiento
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                    Guardando...
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-5 h-5 mr-2" />
+                    Finalizar Seguimiento
+                  </>
+                )}
               </Button>
               <Button
                 variant="outline"

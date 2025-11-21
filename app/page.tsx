@@ -23,7 +23,7 @@ export default function NutritionalAssessmentApp() {
 
   // Evitar problemas de hidratación
   useEffect(() => {
-    setMounted(true)
+    const raf = requestAnimationFrame(() => setMounted(true))
     // Verificar si hay token y obtener rol del usuario
     const token = localStorage.getItem("token")
     if (!token) {
@@ -44,6 +44,7 @@ export default function NutritionalAssessmentApp() {
       .catch(err => {
         console.error("Error fetching user data:", err)
       })
+    return () => cancelAnimationFrame(raf)
   }, [router])
 
   const theme = getThemeColors(currentView)

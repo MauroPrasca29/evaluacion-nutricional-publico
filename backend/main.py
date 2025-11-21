@@ -187,7 +187,7 @@ if reports_router:
 if import_excel_router:
     app.include_router(import_excel_router, prefix="/api/import", tags=["import"])
 if nutrition_router:
-    app.include_router(nutrition_router, prefix="/api", tags=["nutrition"])
+    app.include_router(nutrition_router, prefix="/api/nutrition", tags=["nutrition"])
 if sedes_router:
     app.include_router(sedes_router, prefix="/api/sedes", tags=["sedes"])
 if acudientes_router:

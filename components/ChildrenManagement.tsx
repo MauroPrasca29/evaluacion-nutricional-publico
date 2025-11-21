@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Search, Plus, Eye, Loader2 } from 'lucide-react'
+import { Search, Plus, Eye, Loader2, Pencil, Trash2 } from 'lucide-react'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { NewChildForm } from "./NewChildForm"
 import { ChildProfile } from "./ChildProfile"
+import { toast } from "sonner"
 import type { ThemeColors, NewChildForm as NewChildFormType, Child } from "@/types"
 
 interface ChildrenManagementProps {
@@ -28,6 +29,8 @@ export function ChildrenManagement({ theme }: ChildrenManagementProps) {
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedChild, setSelectedChild] = useState<Child | null>(null)
   const [showNewChildForm, setShowNewChildForm] = useState(false)
+  const [editingChild, setEditingChild] = useState<Infante | null>(null)
+  const [deletingChildId, setDeletingChildId] = useState<number | null>(null)
   const [children, setChildren] = useState<Infante[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -62,10 +65,51 @@ export function ChildrenManagement({ theme }: ChildrenManagementProps) {
   }
 
   const handleSaveChild = (childData: NewChildFormType) => {
-    console.log("Nuevo niño registrado:", childData)
+    console.log("Niño guardado:", childData)
     // Recargar la lista de infantes después de guardar
     fetchChildren()
     setShowNewChildForm(false)
+    setEditingChild(null)
+  }
+
+  const handleEditChild = (child: Infante) => {
+    setEditingChild(child)
+    setShowNewChildForm(true)
+  }
+
+  const handleDeleteChild = async (child: Infante) => {
+    const confirmed = window.confirm(`¿Eliminar a ${child.nombre}? Esta acción no se puede deshacer.`)
+    if (!confirmed) return
+
+    setDeletingChildId(child.id_infante)
+
+    try {
+      const response = await fetch(`/api/children/${child.id_infante}`, {
+        method: "DELETE",
+      })
+
+      if (response.ok || response.status === 204) {
+        setChildren(children.filter((item) => item.id_infante !== child.id_infante))
+        toast.success("Infante eliminado", {
+          description: `${child.nombre} ha sido eliminado.`,
+          duration: 3000,
+        })
+      } else {
+        const error = await response.json()
+        toast.error("No se pudo eliminar", {
+          description: error.detail || "Ocurrió un error al eliminar el infante",
+          duration: 4000,
+        })
+      }
+    } catch (error) {
+      console.error("Error al eliminar infante:", error)
+      toast.error("Error de conexión", {
+        description: "No se pudo conectar con el servidor",
+        duration: 4000,
+      })
+    } finally {
+      setDeletingChildId(null)
+    }
   }
 
   const handleSelectChild = (child: Infante) => {
@@ -113,7 +157,17 @@ export function ChildrenManagement({ theme }: ChildrenManagementProps) {
   }
 
   if (showNewChildForm) {
-    return <NewChildForm theme={theme} onClose={() => setShowNewChildForm(false)} onSave={handleSaveChild} />
+    return (
+      <NewChildForm
+        theme={theme}
+        onClose={() => {
+          setShowNewChildForm(false)
+          setEditingChild(null)
+        }}
+        onSave={handleSaveChild}
+        editingChild={editingChild}
+      />
+    )
   }
 
   if (selectedChild) {
@@ -188,7 +242,7 @@ export function ChildrenManagement({ theme }: ChildrenManagementProps) {
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2">
                     <Button
                       size="sm"
                       variant="outline"
@@ -200,6 +254,40 @@ export function ChildrenManagement({ theme }: ChildrenManagementProps) {
                     >
                       <Eye className="w-4 h-4 mr-2" />
                       Ver Perfil
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleEditChild(child)
+                      }}
+                      className={`${theme.cardBorder} hover:bg-blue-50 transition-colors`}
+                    >
+                      <Pencil className="w-4 h-4 mr-2" />
+                      Editar
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleDeleteChild(child)
+                      }}
+                      disabled={deletingChildId === child.id_infante}
+                      className="border-red-200 text-red-600 hover:bg-red-50 transition-colors"
+                    >
+                      {deletingChildId === child.id_infante ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Eliminando...
+                        </>
+                      ) : (
+                        <>
+                          <Trash2 className="w-4 h-4 mr-2" />
+                          Eliminar
+                        </>
+                      )}
                     </Button>
                   </div>
                 </div>
