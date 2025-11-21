@@ -1,38 +1,46 @@
-import { NextRequest, NextResponse } from "next/server"
+// app/api/auth-me/route.ts
 
-const BACKEND_BASE = process.env.BACKEND_BASE || "http://localhost:8000"
+const BACKEND_BASE = "https://backend-production-73f7.up.railway.app"
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
-    // Obtener el token del header Authorization
-    const authHeader = request.headers.get("authorization")
-    
-    if (!authHeader) {
-      return NextResponse.json(
-        { detail: "No autorizado" },
-        { status: 401 }
-      )
-    }
+    console.log(`🔄 [Auth-Me] Proxy → ${BACKEND_BASE}/api/auth/me`)
 
-    // Reenviar la petición al backend
     const response = await fetch(`${BACKEND_BASE}/api/auth/me`, {
+      method: "GET",
+      credentials: "include",
       headers: {
-        "Authorization": authHeader,
+        "Content-Type": "application/json",
       },
     })
 
-    const data = await response.json()
+    const text = await response.text()
+    let data: any = {}
 
-    if (!response.ok) {
-      return NextResponse.json(data, { status: response.status })
+    try {
+      data = text ? JSON.parse(text) : {}
+    } catch (err) {
+      console.error("❌ [Auth-Me] Error parseando JSON:", err, text)
     }
 
-    return NextResponse.json(data)
-  } catch (error) {
-    console.error("Error en proxy /api/auth-me:", error)
-    return NextResponse.json(
-      { detail: "Error del servidor" },
-      { status: 500 }
+    return new Response(JSON.stringify(data), {
+      status: response.status,
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+      },
+    })
+  } catch (error: any) {
+    console.error("❌ [Auth-Me Error]:", error)
+    return new Response(
+      JSON.stringify({
+        detail: "Error al obtener usuario",
+        error: error?.message || "Error desconocido",
+      }),
+      {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      }
     )
   }
 }
