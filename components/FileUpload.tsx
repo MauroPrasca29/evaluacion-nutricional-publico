@@ -2,10 +2,11 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Upload, X, FileImage, File } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
+import Image from "next/image"
 
 interface FileUploadProps {
   id: string
@@ -19,6 +20,16 @@ interface FileUploadProps {
 export function FileUpload({ id, label, accept = "*/*", multiple = false, onFilesChange, className }: FileUploadProps) {
   const [files, setFiles] = useState<File[]>([])
   const [dragOver, setDragOver] = useState(false)
+  const [previewUrls, setPreviewUrls] = useState<string[]>([])
+
+  useEffect(() => {
+    const urls = files.map((file) => URL.createObjectURL(file))
+    setPreviewUrls(urls)
+
+    return () => {
+      urls.forEach((url) => URL.revokeObjectURL(url))
+    }
+  }, [files])
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = Array.from(event.target.files || [])
@@ -84,10 +95,13 @@ export function FileUpload({ id, label, accept = "*/*", multiple = false, onFile
                   <div className="flex items-center gap-3">
                     {isImage(file) ? (
                       <div className="relative">
-                        <img
-                          src={URL.createObjectURL(file) || "/placeholder.svg"}
+                        <Image
+                          src={previewUrls[index] || "/placeholder.svg"}
                           alt={file.name}
+                          width={48}
+                          height={48}
                           className="w-12 h-12 object-cover rounded"
+                          unoptimized
                         />
                         <FileImage className="absolute -top-1 -right-1 w-4 h-4 text-blue-500 bg-white rounded-full p-0.5" />
                       </div>

@@ -23,7 +23,8 @@ export function GrowthChart({ childId, data }: GrowthChartProps) {
   const [activeTab, setActiveTab] = useState("weight")
 
   useEffect(() => {
-    setIsClient(true)
+    const raf = requestAnimationFrame(() => setIsClient(true))
+    return () => cancelAnimationFrame(raf)
   }, [])
 
   if (!isClient || !data || data.length === 0) {

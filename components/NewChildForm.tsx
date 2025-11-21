@@ -3,7 +3,7 @@
 import type React from "react"
 
 import { useState, useEffect } from "react"
-import { Save, X, Plus, Search, Check, Loader2 } from "lucide-react"
+import { Save, X, Plus, Search, Loader2, Pencil, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -17,6 +17,14 @@ interface NewChildFormProps {
   theme: ThemeColors
   onClose: () => void
   onSave: (childData: any) => void
+  editingChild?: {
+    id_infante: number
+    nombre: string
+    fecha_nacimiento: string
+    genero: string
+    sede_id: number | null
+    acudiente_id: number | null
+  } | null
 }
 
 interface Sede {
@@ -34,22 +42,24 @@ interface Acudiente {
   direccion?: string
 }
 
-export function NewChildForm({ theme, onClose, onSave }: NewChildFormProps) {
+export function NewChildForm({ theme, onClose, onSave, editingChild }: NewChildFormProps) {
   const [sedes, setSedes] = useState<Sede[]>([])
   const [acudientes, setAcudientes] = useState<Acudiente[]>([])
   const [loadingSedes, setLoadingSedes] = useState(true)
   const [loadingAcudientes, setLoadingAcudientes] = useState(true)
-  const [showAcudienteForm, setShowAcudienteForm] = useState(false)
+  const [acudienteFormMode, setAcudienteFormMode] = useState<"create" | "edit" | null>(null)
+  const [editingAcudienteId, setEditingAcudienteId] = useState<number | null>(null)
   const [searchAcudiente, setSearchAcudiente] = useState("")
   const [savingAcudiente, setSavingAcudiente] = useState(false)
+  const [deletingAcudiente, setDeletingAcudiente] = useState(false)
   const [savingChild, setSavingChild] = useState(false)
   
   const [formData, setFormData] = useState({
-    name: "",
-    birthDate: "",
-    gender: "",
-    sedeId: "",
-    acudienteId: "",
+    name: editingChild?.nombre || "",
+    birthDate: editingChild?.fecha_nacimiento || "",
+    gender: editingChild?.genero === "M" ? "masculino" : editingChild?.genero === "F" ? "femenino" : "",
+    sedeId: editingChild?.sede_id?.toString() || "",
+    acudienteId: editingChild?.acudiente_id?.toString() || "",
     weight: "",
     height: "",
     observations: "",
@@ -87,6 +97,7 @@ export function NewChildForm({ theme, onClose, onSave }: NewChildFormProps) {
   // Cargar acudientes desde la API
   useEffect(() => {
     const fetchAcudientes = async () => {
+      setLoadingAcudientes(true)
       try {
         const url = searchAcudiente 
           ? `/api/acudientes?search=${encodeURIComponent(searchAcudiente)}`
@@ -114,16 +125,65 @@ export function NewChildForm({ theme, onClose, onSave }: NewChildFormProps) {
     return () => clearTimeout(timeoutId)
   }, [searchAcudiente])
 
-  const handleCreateAcudiente = async (e: React.FormEvent) => {
-    e.preventDefault()
-    
-    if (savingAcudiente) return // Prevenir doble clic
-    
+  const resetAcudienteForm = () => {
+    setAcudienteForm({ nombre: "", telefono: "", correo: "", direccion: "" })
+    setEditingAcudienteId(null)
+  }
+
+  const openCreateAcudienteForm = () => {
+    resetAcudienteForm()
+    setAcudienteFormMode("create")
+  }
+
+  const openEditAcudienteForm = () => {
+    if (!formData.acudienteId) {
+      toast.info("Selecciona un acudiente para editar", { duration: 3000 })
+      return
+    }
+
+    const acudiente = acudientes.find(
+      (item) => item.id_acudiente.toString() === formData.acudienteId
+    )
+
+    if (!acudiente) {
+      toast.error("No se encontró el acudiente seleccionado", { duration: 4000 })
+      return
+    }
+
+    setAcudienteForm({
+      nombre: acudiente.nombre || "",
+      telefono: acudiente.telefono || "",
+      correo: acudiente.correo || "",
+      direccion: acudiente.direccion || "",
+    })
+    setEditingAcudienteId(acudiente.id_acudiente)
+    setAcudienteFormMode("edit")
+  }
+
+  const closeAcudienteForm = () => {
+    setAcudienteFormMode(null)
+    resetAcudienteForm()
+  }
+
+  const handleSaveAcudiente = async () => {
+    if (savingAcudiente || !acudienteFormMode) return
+
+    const isEditMode = acudienteFormMode === "edit"
+
+    if (isEditMode && !editingAcudienteId) {
+      toast.error("No se ha seleccionado un acudiente para editar", { duration: 4000 })
+      return
+    }
+
     setSavingAcudiente(true)
-    
+
     try {
-      const response = await fetch(`/api/acudientes`, {
-        method: "POST",
+      const url = isEditMode
+        ? `/api/acudientes/${editingAcudienteId}`
+        : `/api/acudientes`
+
+      const response = await fetch(url, {
+        method: isEditMode ? "PUT" : "POST",
         headers: {
           "Content-Type": "application/json",
         },
@@ -131,20 +191,32 @@ export function NewChildForm({ theme, onClose, onSave }: NewChildFormProps) {
       })
 
       if (response.ok) {
-        const newAcudiente = await response.json()
-        setAcudientes([...acudientes, newAcudiente])
-        setFormData({ ...formData, acudienteId: newAcudiente.id_acudiente.toString() })
-        setShowAcudienteForm(false)
-        setAcudienteForm({ nombre: "", telefono: "", correo: "", direccion: "" })
-        
-        toast.success("¡Acudiente registrado!", {
-          description: `${newAcudiente.nombre} ha sido registrado exitosamente.`,
-          duration: 3000,
-        })
+        const updatedAcudiente = await response.json()
+
+        if (isEditMode) {
+          setAcudientes(
+            acudientes.map((item) =>
+              item.id_acudiente === updatedAcudiente.id_acudiente ? updatedAcudiente : item
+            )
+          )
+          toast.success("Acudiente actualizado", {
+            description: `${updatedAcudiente.nombre} ha sido actualizado.`,
+            duration: 3000,
+          })
+        } else {
+          setAcudientes([...acudientes, updatedAcudiente])
+          setFormData({ ...formData, acudienteId: updatedAcudiente.id_acudiente.toString() })
+          toast.success("¡Acudiente registrado!", {
+            description: `${updatedAcudiente.nombre} ha sido registrado exitosamente.`,
+            duration: 3000,
+          })
+        }
+
+        closeAcudienteForm()
       } else {
         const error = await response.json()
-        toast.error("Error al registrar", {
-          description: error.detail || 'No se pudo registrar el acudiente',
+        toast.error(isEditMode ? "Error al actualizar" : "Error al registrar", {
+          description: error.detail || "No se pudo completar la acción",
           duration: 4000,
         })
       }
@@ -159,6 +231,57 @@ export function NewChildForm({ theme, onClose, onSave }: NewChildFormProps) {
     }
   }
 
+  const handleDeleteAcudiente = async () => {
+    if (!formData.acudienteId || deletingAcudiente) return
+
+    const acudiente = acudientes.find(
+      (item) => item.id_acudiente.toString() === formData.acudienteId
+    )
+
+    if (!acudiente) {
+      toast.error("No se encontró el acudiente seleccionado", { duration: 4000 })
+      return
+    }
+
+    const confirmed = window.confirm(`¿Eliminar a ${acudiente.nombre}?`)
+    if (!confirmed) return
+
+    setDeletingAcudiente(true)
+
+    try {
+      const response = await fetch(`/api/acudientes/${acudiente.id_acudiente}`, {
+        method: "DELETE",
+      })
+
+      if (response.ok) {
+        setAcudientes(acudientes.filter((item) => item.id_acudiente !== acudiente.id_acudiente))
+
+        if (formData.acudienteId === acudiente.id_acudiente.toString()) {
+          setFormData({ ...formData, acudienteId: "" })
+        }
+
+        toast.success("Acudiente eliminado", {
+          description: `${acudiente.nombre} ha sido eliminado.`,
+          duration: 3000,
+        })
+      } else {
+        const error = await response.json()
+        toast.error("No se pudo eliminar", {
+          description: error.detail || "Ocurrió un error al eliminar el acudiente",
+          duration: 4000,
+        })
+      }
+    } catch (error) {
+      console.error(error)
+      toast.error("Error de conexión", {
+        description: "No se pudo conectar con el servidor",
+        duration: 4000,
+      })
+    } finally {
+      setDeletingAcudiente(false)
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -166,6 +289,7 @@ export function NewChildForm({ theme, onClose, onSave }: NewChildFormProps) {
     
     setSavingChild(true)
 
+    const isEditMode = !!editingChild
     const payload = {
       nombre: formData.name,
       fecha_nacimiento: formData.birthDate,
@@ -175,8 +299,12 @@ export function NewChildForm({ theme, onClose, onSave }: NewChildFormProps) {
     };
 
     try {
-      const response = await fetch(`/api/children`, {
-        method: "POST",
+      const url = isEditMode
+        ? `/api/children/${editingChild.id_infante}`
+        : `/api/children`
+      
+      const response = await fetch(url, {
+        method: isEditMode ? "PUT" : "POST",
         headers: {
           "Content-Type": "application/json",
         },
@@ -186,8 +314,8 @@ export function NewChildForm({ theme, onClose, onSave }: NewChildFormProps) {
       if (response.ok) {
         const data = await response.json();
         
-        toast.success("¡Niño registrado exitosamente!", {
-          description: `${formData.name} ha sido agregado al sistema.`,
+        toast.success(isEditMode ? "¡Niño actualizado exitosamente!" : "¡Niño registrado exitosamente!", {
+          description: `${formData.name} ha sido ${isEditMode ? "actualizado" : "agregado"} al sistema.`,
           duration: 3000,
         })
         
@@ -198,8 +326,8 @@ export function NewChildForm({ theme, onClose, onSave }: NewChildFormProps) {
         }, 1000)
       } else {
         const error = await response.json();
-        toast.error("Error al registrar el niño", {
-          description: error.detail || 'No se pudo registrar el niño',
+        toast.error(isEditMode ? "Error al actualizar el niño" : "Error al registrar el niño", {
+          description: error.detail || `No se pudo ${isEditMode ? "actualizar" : "registrar"} el niño`,
           duration: 4000,
         })
       }
@@ -218,8 +346,12 @@ export function NewChildForm({ theme, onClose, onSave }: NewChildFormProps) {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800 mb-2">Registrar Nuevo Niño</h1>
-          <p className="text-slate-600">Ingresa la información del nuevo niño en el sistema</p>
+          <h1 className="text-2xl font-bold text-slate-800 mb-2">
+            {editingChild ? "Editar Niño" : "Registrar Nuevo Niño"}
+          </h1>
+          <p className="text-slate-600">
+            {editingChild ? "Modifica la información del niño" : "Ingresa la información del nuevo niño en el sistema"}
+          </p>
         </div>
         <Button
           variant="outline"
@@ -307,22 +439,37 @@ export function NewChildForm({ theme, onClose, onSave }: NewChildFormProps) {
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label htmlFor="acudiente">Acudiente *</Label>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setShowAcudienteForm(!showAcudienteForm)}
-                  className="text-xs"
-                  disabled={savingAcudiente}
-                >
-                  <Plus className="w-3 h-3 mr-1" />
-                  Registrar Nuevo
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={openCreateAcudienteForm}
+                    className="text-xs"
+                    disabled={savingAcudiente}
+                  >
+                    <Plus className="w-3 h-3 mr-1" />
+                    Registrar Nuevo
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={openEditAcudienteForm}
+                    className="text-xs"
+                    disabled={!formData.acudienteId || savingAcudiente}
+                  >
+                    <Pencil className="w-3 h-3 mr-1" />
+                    Editar
+                  </Button>
+                </div>
               </div>
               
-              {showAcudienteForm ? (
+              {acudienteFormMode ? (
                 <Card className="border-2 border-amber-300 bg-amber-50/50 p-4 space-y-4">
-                  <h3 className="font-semibold text-sm text-slate-700">Registrar Nuevo Acudiente</h3>
+                  <h3 className="font-semibold text-sm text-slate-700">
+                    {acudienteFormMode === "edit" ? "Editar Acudiente" : "Registrar Nuevo Acudiente"}
+                  </h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="acudiente-nombre" className="text-xs">Nombre Completo *</Label>
@@ -375,7 +522,7 @@ export function NewChildForm({ theme, onClose, onSave }: NewChildFormProps) {
                     <Button
                       type="button"
                       size="sm"
-                      onClick={handleCreateAcudiente}
+                      onClick={handleSaveAcudiente}
                       className="bg-amber-600 hover:bg-amber-700 text-white"
                       disabled={savingAcudiente || !acudienteForm.nombre}
                     >
@@ -387,7 +534,7 @@ export function NewChildForm({ theme, onClose, onSave }: NewChildFormProps) {
                       ) : (
                         <>
                           <Save className="w-3 h-3 mr-1" />
-                          Guardar Acudiente
+                          {acudienteFormMode === "edit" ? "Guardar Cambios" : "Guardar Acudiente"}
                         </>
                       )}
                     </Button>
@@ -395,7 +542,7 @@ export function NewChildForm({ theme, onClose, onSave }: NewChildFormProps) {
                       type="button"
                       size="sm"
                       variant="outline"
-                      onClick={() => setShowAcudienteForm(false)}
+                      onClick={closeAcudienteForm}
                       disabled={savingAcudiente}
                     >
                       Cancelar
@@ -434,6 +581,28 @@ export function NewChildForm({ theme, onClose, onSave }: NewChildFormProps) {
                       )}
                     </SelectContent>
                   </Select>
+                  <div className="flex items-center gap-2 pt-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={handleDeleteAcudiente}
+                      disabled={!formData.acudienteId || deletingAcudiente}
+                      className="text-xs border-red-200 text-red-600 hover:bg-red-50"
+                    >
+                      {deletingAcudiente ? (
+                        <>
+                          <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                          Eliminando...
+                        </>
+                      ) : (
+                        <>
+                          <Trash2 className="w-3 h-3 mr-1" />
+                          Eliminar
+                        </>
+                      )}
+                    </Button>
+                  </div>
                 </>
               )}
             </div>
@@ -489,18 +658,18 @@ export function NewChildForm({ theme, onClose, onSave }: NewChildFormProps) {
             <div className="flex gap-4 pt-4">
               <Button
                 type="submit"
-                className="flex-1 bg-gradient-to-r from-blue-500 to-blue-600 text-white transition-all duration-300 hover:scale-105 hover:from-blue-600 hover:to-blue-700"
+                className={`flex-1 bg-gradient-to-r ${theme.buttonColor} text-white transition-all duration-300 hover:scale-105`}
                 disabled={savingChild}
               >
                 {savingChild ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Registrando...
+                    {editingChild ? "Actualizando..." : "Registrando..."}
                   </>
                 ) : (
                   <>
                     <Save className="w-4 h-4 mr-2" />
-                    Registrar Niño
+                    {editingChild ? "Actualizar Niño" : "Registrar Niño"}
                   </>
                 )}
               </Button>

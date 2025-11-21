@@ -27,6 +27,13 @@ class AcudienteOut(BaseModel):
 
 
 # ====== Endpoints ======
+class AcudienteUpdate(BaseModel):
+    nombre: Optional[str] = Field(None, min_length=1)
+    telefono: Optional[str] = None
+    correo: Optional[str] = None
+    direccion: Optional[str] = None
+
+
 @router.get("/", response_model=List[AcudienteOut])
 def list_acudientes(
     limit: int = Query(100, ge=1, le=500),
@@ -79,3 +86,50 @@ def get_acudiente(
         )
     
     return acudiente
+
+
+@router.put("/{acudiente_id}", response_model=AcudienteOut)
+def update_acudiente(
+    acudiente_id: int,
+    payload: AcudienteUpdate,
+    db: Session = Depends(get_db)
+):
+    """Actualiza los datos de un acudiente"""
+    acudiente = db.query(Acudiente).filter(Acudiente.id_acudiente == acudiente_id).first()
+
+    if not acudiente:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Acudiente con id {acudiente_id} no encontrado"
+        )
+
+    update_data = payload.model_dump(exclude_unset=True)
+
+    if not update_data:
+        return acudiente
+
+    for field, value in update_data.items():
+        setattr(acudiente, field, value)
+
+    db.commit()
+    db.refresh(acudiente)
+
+    return acudiente
+
+
+@router.delete("/{acudiente_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_acudiente(
+    acudiente_id: int,
+    db: Session = Depends(get_db)
+):
+    """Elimina un acudiente existente"""
+    acudiente = db.query(Acudiente).filter(Acudiente.id_acudiente == acudiente_id).first()
+
+    if not acudiente:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Acudiente con id {acudiente_id} no encontrado"
+        )
+
+    db.delete(acudiente)
+    db.commit()
