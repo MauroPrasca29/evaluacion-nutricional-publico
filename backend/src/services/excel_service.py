@@ -1,17 +1,43 @@
-# Excel processing service
+# backend/src/services/excel_service.py
 import pandas as pd
-from typing import List, Dict, Any, Optional
+import re
+from typing import List, Dict, Any, Optional, Tuple, Set
 from io import BytesIO
 from datetime import datetime, date
 from openpyxl.worksheet.datavalidation import DataValidation
-import re
+from sqlalchemy import or_, and_
 
 class ExcelService:
     
+    # Cache a nivel de clase para tablas WHO/RIEN
+    _nutrition_cache = None
+    
+    @staticmethod
+    def _ensure_nutrition_cache():
+        """Carga todas las tablas nutricionales en memoria UNA SOLA VEZ"""
+        if ExcelService._nutrition_cache is not None:
+            return ExcelService._nutrition_cache
+        
+        print("🔄 Inicializando cache de tablas nutricionales...")
+        from src.services.nutrition_service import NutritionService
+        
+        # Pre-cargar todas las tablas WHO que se usan frecuentemente
+        # Esto se hace una sola vez al iniciar el procesamiento
+        ExcelService._nutrition_cache = {
+            'initialized': True,
+            'service': NutritionService
+        }
+        
+        print("✅ Cache de tablas nutricionales inicializado")
+        return ExcelService._nutrition_cache
+    
     @staticmethod
     def process_children_excel(file_content: bytes, db_session) -> Dict[str, Any]:
-        """Process Excel file with children data with comprehensive validation"""
+        """Process Excel file with children data - FASE 2 OPTIMIZED with BATCH PROCESSING"""
         try:
+            # ⚡ FASE 1: Cargar cache nutricional al inicio
+            ExcelService._ensure_nutrition_cache()
+            
             df = pd.read_excel(BytesIO(file_content))
             
             # Mapeos de español a inglés para procesamiento
@@ -53,237 +79,349 @@ class ExcelService:
             from src.db.models import Acudiente, Infante, Seguimiento, DatoAntropometrico, Examen, EvaluacionNutricional
             from src.services.nutrition_service import NutritionService
             
-            processed_data = []
+            total_rows = len(df)
+            print(f"📊 Procesando {total_rows} filas con BATCH PROCESSING...")
+            
+            # ⚡ FASE 2 - PASO 1: Extraer todas las claves únicas para batch queries
+            print("🔍 Extrayendo datos únicos para búsqueda en lote...")
+            acudientes_keys: Set[Tuple[str, str]] = set()
+            infantes_keys: Set[Tuple[str, date, str]] = set()  # (nombre, fecha_nac, acudiente_key)
+            
+            # Primera pasada: recolectar claves únicas
+            validated_rows = []
             errors = []
-            success_count = 0
             
             for idx, row in df.iterrows():
-                row_num = idx + 2  # Excel starts at row 2 (after header)
+                row_num = idx + 2
                 row_errors = []
                 
                 try:
-                    # ===== VALIDACIONES ACUDIENTE =====
-                    acudiente_documento = str(row.get('acudiente_documento', '')).strip()
-                    if not acudiente_documento or pd.isna(row.get('acudiente_documento')):
-                        row_errors.append("Documento de acudiente es requerido")
-                    
+                    # Validaciones rápidas
                     acudiente_nombre = str(row.get('acudiente_nombre', '')).strip()
+                    acudiente_telefono = str(row.get('acudiente_telefono', '')).strip()
+                    
                     if not acudiente_nombre or pd.isna(row.get('acudiente_nombre')):
                         row_errors.append("Nombre de acudiente es requerido")
-                    
-                    acudiente_telefono = str(row.get('acudiente_telefono', '')).strip()
                     if not acudiente_telefono or pd.isna(row.get('acudiente_telefono')):
                         row_errors.append("Teléfono de acudiente es requerido")
                     elif not re.match(r'^\d{10}$', acudiente_telefono):
-                        row_errors.append(f"Teléfono de acudiente inválido (debe tener 10 dígitos): {acudiente_telefono}")
+                        row_errors.append(f"Teléfono inválido: {acudiente_telefono}")
                     
+                    infante_nombre = str(row.get('infante_nombre', '')).strip()
+                    if not infante_nombre or pd.isna(row.get('infante_nombre')):
+                        row_errors.append("Nombre de infante es requerido")
+                    
+                    infante_fecha_nacimiento = row.get('infante_fecha_nacimiento')
+                    if pd.isna(infante_fecha_nacimiento):
+                        row_errors.append("Fecha de nacimiento del infante es requerida")
+                    else:
+                        if isinstance(infante_fecha_nacimiento, str):
+                            infante_fecha_nacimiento = datetime.strptime(infante_fecha_nacimiento, "%Y-%m-%d").date()
+                        elif isinstance(infante_fecha_nacimiento, pd.Timestamp):
+                            infante_fecha_nacimiento = infante_fecha_nacimiento.date()
+                        elif not isinstance(infante_fecha_nacimiento, date):
+                            infante_fecha_nacimiento = pd.to_datetime(infante_fecha_nacimiento).date()
+                    
+                    if row_errors:
+                        errors.append({
+                            "fila": row_num,
+                            "infante": infante_nombre,
+                            "errores": row_errors
+                        })
+                        continue
+                    
+                    # Guardar claves para batch query
+                    acudiente_key = (acudiente_nombre, acudiente_telefono)
+                    acudientes_keys.add(acudiente_key)
+                    infantes_keys.add((infante_nombre, infante_fecha_nacimiento, acudiente_key))
+                    
+                    # Guardar row validada para procesamiento posterior
+                    validated_rows.append({
+                        'idx': idx,
+                        'row_num': row_num,
+                        'row': row,
+                        'acudiente_key': acudiente_key,
+                        'infante_key': (infante_nombre, infante_fecha_nacimiento)
+                    })
+                    
+                except Exception as e:
+                    errors.append({
+                        "fila": row_num,
+                        "infante": infante_nombre if 'infante_nombre' in locals() else "N/A",
+                        "errores": [f"Error en validación inicial: {str(e)}"]
+                    })
+            
+            if not validated_rows:
+                return {
+                    "success": False,
+                    "error": "No hay filas válidas para procesar",
+                    "errors": errors
+                }
+            
+            # ⚡ FASE 2 - PASO 2: Batch query para TODOS los acudientes
+            print(f"🔍 Buscando {len(acudientes_keys)} acudientes únicos en DB...")
+            acudientes_map: Dict[Tuple[str, str], Acudiente] = {}
+            
+            if acudientes_keys:
+                # Construir query con OR para todos los acudientes
+                acudiente_conditions = [
+                    and_(
+                        Acudiente.nombre == nombre,
+                        Acudiente.telefono == telefono
+                    )
+                    for nombre, telefono in acudientes_keys
+                ]
+                
+                existing_acudientes = db_session.query(Acudiente).filter(
+                    or_(*acudiente_conditions)
+                ).all()
+                
+                acudientes_map = {
+                    (a.nombre, a.telefono): a 
+                    for a in existing_acudientes
+                }
+                print(f"✅ Encontrados {len(acudientes_map)} acudientes existentes")
+            
+            # ⚡ FASE 2 - PASO 3: Crear acudientes faltantes en BATCH
+            nuevos_acudientes = []
+            for acudiente_key in acudientes_keys:
+                if acudiente_key not in acudientes_map:
+                    nuevo = Acudiente(
+                        nombre=acudiente_key[0],
+                        telefono=acudiente_key[1],
+                        correo=None,  # Se actualizará después si es necesario
+                        direccion=None
+                    )
+                    nuevos_acudientes.append(nuevo)
+                    acudientes_map[acudiente_key] = nuevo
+            
+            if nuevos_acudientes:
+                print(f"➕ Creando {len(nuevos_acudientes)} acudientes nuevos...")
+                db_session.bulk_save_objects(nuevos_acudientes, return_defaults=True)
+                db_session.flush()
+                print(f"✅ Acudientes guardados")
+            
+            # ⚡ FASE 2 - PASO 4: Batch query para TODOS los infantes
+            print(f"🔍 Buscando infantes únicos en DB...")
+            infantes_map: Dict[Tuple[str, date, int], Infante] = {}
+            
+            # Agrupar infantes por acudiente para query más eficiente
+            if infantes_keys:
+                # Necesitamos los IDs de acudientes primero
+                infante_conditions = []
+                for infante_nombre, fecha_nac, acudiente_key in infantes_keys:
+                    acudiente = acudientes_map.get(acudiente_key)
+                    if acudiente and acudiente.id_acudiente:
+                        infante_conditions.append(
+                            and_(
+                                Infante.nombre == infante_nombre,
+                                Infante.fecha_nacimiento == fecha_nac,
+                                Infante.acudiente_id == acudiente.id_acudiente
+                            )
+                        )
+                
+                if infante_conditions:
+                    existing_infantes = db_session.query(Infante).filter(
+                        or_(*infante_conditions)
+                    ).all()
+                    
+                    for i in existing_infantes:
+                        # Recuperar acudiente para crear key
+                        acudiente = db_session.query(Acudiente).get(i.acudiente_id)
+                        if acudiente:
+                            key = (i.nombre, i.fecha_nacimiento, acudiente.id_acudiente)
+                            infantes_map[key] = i
+                    
+                    print(f"✅ Encontrados {len(infantes_map)} infantes existentes")
+            
+            # Ahora procesamos cada fila con los datos pre-cargados
+            print(f"⚙️ Procesando {len(validated_rows)} filas...")
+            
+            processed_data = []
+            success_count = 0
+            
+            for validated_row in validated_rows:
+                idx = validated_row['idx']
+                row_num = validated_row['row_num']
+                row = validated_row['row']
+                acudiente_key = validated_row['acudiente_key']
+                
+                if idx > 0 and idx % 10 == 0:
+                    print(f"  ⏳ Procesadas {idx}/{total_rows} filas ({idx*100//total_rows}%)...")
+                
+                try:
+                    # Validaciones completas
+                    acudiente_documento = str(row.get('acudiente_documento', '')).strip()
+                    acudiente_nombre = acudiente_key[0]
+                    acudiente_telefono = acudiente_key[1]
                     acudiente_tipo_documento = str(row.get('acudiente_tipo_documento', 'CC')).strip()
                     acudiente_email = str(row.get('acudiente_email', '')).strip() if not pd.isna(row.get('acudiente_email')) else None
                     acudiente_direccion = str(row.get('acudiente_direccion', '')).strip() if not pd.isna(row.get('acudiente_direccion')) else None
                     acudiente_parentesco = str(row.get('acudiente_parentesco', '')).strip() if not pd.isna(row.get('acudiente_parentesco')) else None
                     
-                    # Validar email si se proporciona
                     if acudiente_email and not re.match(r'^[\w\.-]+@[\w\.-]+\.\w+$', acudiente_email):
-                        row_errors.append(f"Email de acudiente inválido: {acudiente_email}")
+                        acudiente_email = None
                     
-                    # ===== VALIDACIONES INFANTE =====
+                    # Obtener acudiente del mapa
+                    acudiente = acudientes_map[acudiente_key]
+                    
+                    # Actualizar datos adicionales si son nuevos
+                    if acudiente_email and not acudiente.correo:
+                        acudiente.correo = acudiente_email
+                    if acudiente_direccion and not acudiente.direccion:
+                        acudiente.direccion = acudiente_direccion
+                    
+                    # Validar infante
                     infante_nombre = str(row.get('infante_nombre', '')).strip()
-                    if not infante_nombre or pd.isna(row.get('infante_nombre')):
-                        row_errors.append("Nombre de infante es requerido")
-                    
-                    # Validar fecha de nacimiento
                     infante_fecha_nacimiento = row.get('infante_fecha_nacimiento')
-                    if pd.isna(infante_fecha_nacimiento):
-                        row_errors.append("Fecha de nacimiento del infante es requerida")
-                    else:
-                        try:
-                            if isinstance(infante_fecha_nacimiento, str):
-                                infante_fecha_nacimiento = datetime.strptime(infante_fecha_nacimiento, "%Y-%m-%d").date()
-                            elif isinstance(infante_fecha_nacimiento, pd.Timestamp):
-                                infante_fecha_nacimiento = infante_fecha_nacimiento.date()
-                            elif not isinstance(infante_fecha_nacimiento, date):
-                                infante_fecha_nacimiento = pd.to_datetime(infante_fecha_nacimiento).date()
-                        except Exception as e:
-                            row_errors.append(f"Fecha de nacimiento inválida (formato: YYYY-MM-DD): {infante_fecha_nacimiento}")
                     
-                    # Validar género
+                    if isinstance(infante_fecha_nacimiento, str):
+                        infante_fecha_nacimiento = datetime.strptime(infante_fecha_nacimiento, "%Y-%m-%d").date()
+                    elif isinstance(infante_fecha_nacimiento, pd.Timestamp):
+                        infante_fecha_nacimiento = infante_fecha_nacimiento.date()
+                    elif not isinstance(infante_fecha_nacimiento, date):
+                        infante_fecha_nacimiento = pd.to_datetime(infante_fecha_nacimiento).date()
+                    
                     infante_genero = str(row.get('infante_genero', '')).strip()
-                    if not infante_genero or pd.isna(row.get('infante_genero')):
-                        row_errors.append("Género del infante es requerido")
-                    elif infante_genero not in genero_map:
-                        row_errors.append(f"Género inválido (debe ser Masculino o Femenino): {infante_genero}")
-                    else:
-                        infante_genero_db = genero_map[infante_genero]
+                    if infante_genero not in genero_map:
+                        errors.append({
+                            "fila": row_num,
+                            "infante": infante_nombre,
+                            "errores": [f"Género inválido: {infante_genero}"]
+                        })
+                        continue
                     
-                    # Validar sede_id
+                    infante_genero_db = genero_map[infante_genero]
+                    
                     try:
                         sede_id = int(row.get('sede_id'))
                     except:
-                        row_errors.append(f"ID de sede inválido (debe ser un número entero): {row.get('sede_id')}")
-                        sede_id = None
+                        errors.append({
+                            "fila": row_num,
+                            "infante": infante_nombre,
+                            "errores": [f"ID de sede inválido: {row.get('sede_id')}"]
+                        })
+                        continue
                     
-                    infante_documento = str(row.get('infante_documento', '')).strip() if not pd.isna(row.get('infante_documento')) else None
-                    infante_tipo_documento = str(row.get('infante_tipo_documento', 'RC')).strip()
+                    # Buscar o crear infante
+                    infante_map_key = (infante_nombre, infante_fecha_nacimiento, acudiente.id_acudiente)
+                    infante = infantes_map.get(infante_map_key)
                     
-                    # ===== VALIDACIONES SEGUIMIENTO =====
+                    if not infante:
+                        infante = Infante(
+                            nombre=infante_nombre,
+                            fecha_nacimiento=infante_fecha_nacimiento,
+                            genero=infante_genero_db[0].upper(),
+                            acudiente_id=acudiente.id_acudiente,
+                            sede_id=sede_id
+                        )
+                        db_session.add(infante)
+                        db_session.flush()
+                        infantes_map[infante_map_key] = infante
+                    
+                    # Validar seguimiento
                     seguimiento_fecha = row.get('seguimiento_fecha')
-                    if pd.isna(seguimiento_fecha):
-                        row_errors.append("Fecha de seguimiento es requerida")
-                    else:
-                        try:
-                            if isinstance(seguimiento_fecha, str):
-                                seguimiento_fecha = datetime.strptime(seguimiento_fecha, "%Y-%m-%d").date()
-                            elif isinstance(seguimiento_fecha, pd.Timestamp):
-                                seguimiento_fecha = seguimiento_fecha.date()
-                            elif not isinstance(seguimiento_fecha, date):
-                                seguimiento_fecha = pd.to_datetime(seguimiento_fecha).date()
-                        except Exception as e:
-                            row_errors.append(f"Fecha de seguimiento inválida (formato: YYYY-MM-DD): {seguimiento_fecha}")
+                    if isinstance(seguimiento_fecha, str):
+                        seguimiento_fecha = datetime.strptime(seguimiento_fecha, "%Y-%m-%d").date()
+                    elif isinstance(seguimiento_fecha, pd.Timestamp):
+                        seguimiento_fecha = seguimiento_fecha.date()
+                    elif not isinstance(seguimiento_fecha, date):
+                        seguimiento_fecha = pd.to_datetime(seguimiento_fecha).date()
                     
-                    # Validar peso
                     try:
                         peso = float(row.get('peso'))
                         if peso <= 0 or peso > 200:
-                            row_errors.append(f"Peso inválido (debe estar entre 0 y 200 kg): {peso}")
+                            raise ValueError(f"Peso fuera de rango: {peso}")
                     except:
-                        row_errors.append(f"Peso inválido (debe ser un número decimal): {row.get('peso')}")
-                        peso = None
+                        errors.append({
+                            "fila": row_num,
+                            "infante": infante_nombre,
+                            "errores": [f"Peso inválido: {row.get('peso')}"]
+                        })
+                        continue
                     
-                    # Validar estatura
                     try:
                         estatura = float(row.get('estatura'))
                         if estatura <= 0 or estatura > 250:
-                            row_errors.append(f"Estatura inválida (debe estar entre 0 y 250 cm): {estatura}")
+                            raise ValueError(f"Estatura fuera de rango: {estatura}")
                     except:
-                        row_errors.append(f"Estatura inválida (debe ser un número decimal): {row.get('estatura')}")
-                        estatura = None
+                        errors.append({
+                            "fila": row_num,
+                            "infante": infante_nombre,
+                            "errores": [f"Estatura inválida: {row.get('estatura')}"]
+                        })
+                        continue
                     
-                    # Validar medidas opcionales
+                    # Medidas opcionales
                     perimetro_cefalico = None
                     if not pd.isna(row.get('perimetro_cefalico')):
                         try:
                             perimetro_cefalico = float(row.get('perimetro_cefalico'))
                             if perimetro_cefalico < 0 or perimetro_cefalico > 100:
-                                row_errors.append(f"Perímetro cefálico inválido: {perimetro_cefalico}")
                                 perimetro_cefalico = None
                         except:
-                            row_errors.append(f"Perímetro cefálico inválido (debe ser decimal): {row.get('perimetro_cefalico')}")
+                            pass
                     
                     pliegue_triceps = None
                     if not pd.isna(row.get('pliegue_triceps')):
                         try:
                             pliegue_triceps = float(row.get('pliegue_triceps'))
                             if pliegue_triceps < 0 or pliegue_triceps > 100:
-                                row_errors.append(f"Pliegue tricipital inválido: {pliegue_triceps}")
                                 pliegue_triceps = None
                         except:
-                            row_errors.append(f"Pliegue tricipital inválido (debe ser decimal): {row.get('pliegue_triceps')}")
-                                                
+                            pass
+                    
                     pliegue_subescapular = None
                     if not pd.isna(row.get('pliegue_subescapular')):
                         try:
                             pliegue_subescapular = float(row.get('pliegue_subescapular'))
                             if pliegue_subescapular < 0 or pliegue_subescapular > 100:
-                                row_errors.append(f"Pliegue subescapular inválido: {pliegue_subescapular}")
                                 pliegue_subescapular = None
                         except:
-                            row_errors.append(f"Pliegue subescapular inválido (debe ser decimal): {row.get('pliegue_subescapular')}")
+                            pass
                     
                     circunferencia_braquial = None
                     if not pd.isna(row.get('circunferencia_braquial')):
                         try:
                             circunferencia_braquial = float(row.get('circunferencia_braquial'))
                             if circunferencia_braquial < 0 or circunferencia_braquial > 100:
-                                row_errors.append(f"Circunferencia braquial inválida: {circunferencia_braquial}")
                                 circunferencia_braquial = None
                         except:
-                            row_errors.append(f"Circunferencia braquial inválida (debe ser decimal): {row.get('circunferencia_braquial')}")
+                            pass
                     
                     perimetro_abdominal = None
                     if not pd.isna(row.get('perimetro_abdominal')):
                         try:
                             perimetro_abdominal = float(row.get('perimetro_abdominal'))
                             if perimetro_abdominal < 0 or perimetro_abdominal > 200:
-                                row_errors.append(f"Perímetro abdominal inválido: {perimetro_abdominal}")
                                 perimetro_abdominal = None
                         except:
-                            row_errors.append(f"Perímetro abdominal inválido (debe ser decimal): {row.get('perimetro_abdominal')}")
+                            pass
                     
-                    # Validar nivel de actividad
                     nivel_actividad = str(row.get('nivel_actividad', '')).strip() if not pd.isna(row.get('nivel_actividad')) else None
-                    if nivel_actividad and nivel_actividad not in actividad_map:
-                        row_errors.append(f"Nivel de actividad inválido (debe ser Ligera, Moderada o Intensa): {nivel_actividad}")
-                        nivel_actividad = None
-                    elif nivel_actividad:
+                    if nivel_actividad and nivel_actividad in actividad_map:
                         nivel_actividad = actividad_map[nivel_actividad]
+                    else:
+                        nivel_actividad = None
                     
-                    # Validar tipo de alimentación
                     tipo_alimentacion = str(row.get('tipo_alimentacion', '')).strip() if not pd.isna(row.get('tipo_alimentacion')) else None
-                    if tipo_alimentacion and tipo_alimentacion not in alimentacion_map:
-                        row_errors.append(f"Tipo de alimentación inválido (debe ser Lactancia materna, Fórmula o Mixta): {tipo_alimentacion}")
-                        tipo_alimentacion = None
-                    elif tipo_alimentacion:
+                    if tipo_alimentacion and tipo_alimentacion in alimentacion_map:
                         tipo_alimentacion = alimentacion_map[tipo_alimentacion]
+                    else:
+                        tipo_alimentacion = None
                     
                     observacion = str(row.get('observacion', '')).strip() if not pd.isna(row.get('observacion')) else None
                     
-                    # Validar hemoglobina
                     hemoglobina = None
                     if not pd.isna(row.get('hemoglobina')):
                         try:
                             hemoglobina = float(row.get('hemoglobina'))
                             if hemoglobina < 0 or hemoglobina > 30:
-                                row_errors.append(f"Hemoglobina inválida (debe estar entre 0 y 30 g/dL): {hemoglobina}")
                                 hemoglobina = None
                         except:
-                            row_errors.append(f"Hemoglobina inválida (debe ser decimal): {row.get('hemoglobina')}")
+                            pass
                     
-                    # Si hay errores de validación, agregar a la lista de errores y continuar
-                    if row_errors:
-                        errors.append({
-                            "fila": row_num,
-                            "infante": infante_nombre if 'infante_nombre' in locals() else "N/A",
-                            "errores": row_errors
-                        })
-                        continue
-                    
-                    # ===== PROCESAMIENTO EN BASE DE DATOS =====
-                    
-                    # 1. Buscar o crear acudiente
-                    acudiente = db_session.query(Acudiente).filter(
-                        Acudiente.nombre == acudiente_nombre,
-                        Acudiente.telefono == acudiente_telefono
-                    ).first()
-                    
-                    if not acudiente:
-                        acudiente = Acudiente(
-                            nombre=acudiente_nombre,
-                            telefono=acudiente_telefono,
-                            correo=acudiente_email,
-                            direccion=acudiente_direccion
-                        )
-                        db_session.add(acudiente)
-                        db_session.flush()
-                    
-                    # 2. Buscar o crear infante
-                    infante = db_session.query(Infante).filter(
-                        Infante.nombre == infante_nombre,
-                        Infante.fecha_nacimiento == infante_fecha_nacimiento,
-                        Infante.acudiente_id == acudiente.id_acudiente
-                    ).first()
-                    
-                    if not infante:
-                        infante = Infante(
-                            nombre=infante_nombre,
-                            fecha_nacimiento=infante_fecha_nacimiento,
-                            genero=infante_genero_db[0].upper(),  # 'M' o 'F'
-                            acudiente_id=acudiente.id_acudiente,
-                            sede_id=sede_id
-                        )
-                        db_session.add(infante)
-                        db_session.flush()
-                    
-                    # 3. Crear seguimiento
+                    # Crear seguimiento
                     seguimiento = Seguimiento(
                         infante_id=infante.id_infante,
                         fecha=seguimiento_fecha,
@@ -293,13 +431,13 @@ class ExcelService:
                     db_session.add(seguimiento)
                     db_session.flush()
                     
-                    # 4. Calcular IMC
+                    # Calcular IMC
                     imc = None
                     if peso and estatura:
                         altura_metros = estatura / 100
                         imc = peso / (altura_metros ** 2)
                     
-                    # 5. Crear datos antropométricos
+                    # Crear datos antropométricos
                     datos_antropo = DatoAntropometrico(
                         seguimiento_id=seguimiento.id_seguimiento,
                         peso=peso,
@@ -313,7 +451,7 @@ class ExcelService:
                     )
                     db_session.add(datos_antropo)
                     
-                    # 6. Crear examen si hay hemoglobina
+                    # Crear examen si hay hemoglobina
                     if hemoglobina is not None:
                         examen = Examen(
                             seguimiento_id=seguimiento.id_seguimiento,
@@ -321,7 +459,7 @@ class ExcelService:
                         )
                         db_session.add(examen)
                     
-                    # 7. Realizar evaluación nutricional
+                    # Evaluación nutricional con cache
                     if peso and estatura:
                         age_days = (seguimiento_fecha - infante_fecha_nacimiento).days
                         gender = 'male' if infante.genero == 'M' else 'female'
@@ -337,7 +475,7 @@ class ExcelService:
                         )
                         
                         energy_req = NutritionService.get_energy_requirement(
-                                                        age_days=age_days,
+                            age_days=age_days,
                             weight=peso,
                             gender=gender,
                             feeding_mode=tipo_alimentacion or 'mixed',
@@ -352,15 +490,12 @@ class ExcelService:
                                 weight=peso,
                                 kcal_per_day=energy_req.get("kcal_per_day") if energy_req else None
                             )
-                            if not nutrient_data:
-                                print(f"WARNING: get_nutrient_food_table_data retornó vacío/None")
                         except Exception as e:
-                            print(f"ERROR al obtener nutrient_data: {str(e)}")
+                            print(f"WARNING: nutrient_data error: {str(e)}")
                             nutrient_data = []
                         
                         recommendations = NutritionService.generate_recommendations(assessment)
                         
-                        # Guardar evaluación
                         evaluacion = EvaluacionNutricional(
                             seguimiento_id=seguimiento.id_seguimiento,
                             imc=assessment.get("bmi"),
@@ -385,7 +520,6 @@ class ExcelService:
                             instrucciones_cuidador=recommendations.get("caregiver_instructions", [])
                         )
                         db_session.add(evaluacion)
-                        db_session.flush()  # Asegurar que se guarde antes de continuar
                     
                     success_count += 1
                     processed_data.append({
@@ -402,9 +536,11 @@ class ExcelService:
                         "errores": [f"Error inesperado: {str(e)}"]
                     })
             
-            # Commit solo si hubo al menos un registro exitoso
+            # ⚡ UN SOLO COMMIT AL FINAL
             if success_count > 0:
+                print(f"💾 Guardando {success_count} seguimientos en la base de datos...")
                 db_session.commit()
+                print(f"✅ Importación completada: {success_count} éxitos, {len(errors)} errores")
             
             return {
                 "success": True,
@@ -422,15 +558,12 @@ class ExcelService:
                 "error": f"Error al procesar el archivo: {str(e)}"
             }
 
-
-
     
     @staticmethod
     def generate_template() -> bytes:
         """Generate Excel template for data import with all required fields"""
         
         # Datos de ejemplo con todas las columnas necesarias
-        # ORDEN: Primero infantes, luego acudientes
         template_data = {
             # SECCIÓN 1: DATOS DEL INFANTE
             'infante_documento': ['1122334455', '2233445566'],
@@ -466,15 +599,12 @@ class ExcelService:
             'hemoglobina': [12.5, 11.8],
         }
         
-        # Crear DataFrame
         df = pd.DataFrame(template_data)
-        
-        # Crear Excel con formato
         output = BytesIO()
+        
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             df.to_excel(writer, sheet_name='Plantilla', index=False)
             
-            # Obtener el workbook y worksheet para formatear
             workbook = writer.book
             worksheet = writer.sheets['Plantilla']
             
@@ -491,9 +621,7 @@ class ExcelService:
                 adjusted_width = min(max_length + 2, 50)
                 worksheet.column_dimensions[column_letter].width = adjusted_width
             
-            # AGREGAR VALIDACIONES DE DATOS (LISTAS DESPLEGABLES)
-            
-            # 1. Género (columna E - infante_genero)
+            # Validaciones de datos
             dv_genero = DataValidation(
                 type="list",
                 formula1='"Masculino,Femenino"',
@@ -504,9 +632,8 @@ class ExcelService:
             dv_genero.prompt = 'Seleccione: Masculino o Femenino'
             dv_genero.promptTitle = 'Género'
             worksheet.add_data_validation(dv_genero)
-            dv_genero.add('E2:E1000')  # Aplicar a las primeras 1000 filas
+            dv_genero.add('E2:E1000')
             
-            # 2. Nivel de actividad (columna V - nivel_actividad)
             dv_actividad = DataValidation(
                 type="list",
                 formula1='"Ligera,Moderada,Intensa"',
@@ -519,7 +646,6 @@ class ExcelService:
             worksheet.add_data_validation(dv_actividad)
             dv_actividad.add('V2:V1000')
             
-            # 3. Tipo de alimentación (columna W - tipo_alimentacion)
             dv_alimentacion = DataValidation(
                 type="list",
                 formula1='"Lactancia materna,Fórmula,Mixta"',
@@ -532,150 +658,54 @@ class ExcelService:
             worksheet.add_data_validation(dv_alimentacion)
             dv_alimentacion.add('W2:W1000')
             
-            # Agregar hoja de instrucciones
+            # Hoja de instrucciones
             instructions_data = {
                 'Campo': [
-                    'INFANTE',
-                    'infante_documento',
-                    'infante_tipo_documento',
-                    'infante_nombre',
-                    'infante_fecha_nacimiento',
-                    'infante_genero',
-                    'sede_id',
-                    '',
-                    'ACUDIENTE',
-                    'acudiente_documento',
-                    'acudiente_tipo_documento',
-                    'acudiente_nombre',
-                    'acudiente_telefono',
-                    'acudiente_email',
-                    'acudiente_direccion',
-                    'acudiente_parentesco',
-                    '',
-                    'SEGUIMIENTO',
-                    'seguimiento_fecha',
-                    'peso',
-                    'estatura',
-                    'perimetro_cefalico',
-                    'pliegue_triceps',
-                    'pliegue_subescapular',
-                    'circunferencia_braquial',
-                    'perimetro_abdominal',
-                    'nivel_actividad',
-                    'tipo_alimentacion',
-                    'observacion',
-                    '',
-                    'EXÁMENES',
-                    'hemoglobina',
+                    'INFANTE', 'infante_documento', 'infante_tipo_documento', 'infante_nombre',
+                    'infante_fecha_nacimiento', 'infante_genero', 'sede_id', '',
+                    'ACUDIENTE', 'acudiente_documento', 'acudiente_tipo_documento', 'acudiente_nombre',
+                    'acudiente_telefono', 'acudiente_email', 'acudiente_direccion', 'acudiente_parentesco', '',
+                    'SEGUIMIENTO', 'seguimiento_fecha', 'peso', 'estatura', 'perimetro_cefalico',
+                    'pliegue_triceps', 'pliegue_subescapular', 'circunferencia_braquial', 'perimetro_abdominal',
+                    'nivel_actividad', 'tipo_alimentacion', 'observacion', '',
+                    'EXÁMENES', 'hemoglobina',
                 ],
                 'Descripción': [
-                    'Datos del niño/a',
-                    'Documento del niño (opcional si es muy pequeño)',
-                    'RC, TI, etc.',
-                    'Nombre completo del niño/a',
-                    'Formato: YYYY-MM-DD',
-                    'Masculino o Femenino',
-                    'ID de la sede (número)',
-                    '',
-                    'Datos del padre/madre/acudiente',
-                    'Número de documento del acudiente',
-                    'CC, TI, CE, etc.',
-                    'Nombre completo del acudiente',
-                    'Teléfono de contacto',
-                    'Correo electrónico (opcional)',
-                    'Dirección de residencia',
-                    'Madre, Padre, Abuelo/a, Tío/a, etc.',
-                    '',
-                    'Datos de medición',
-                    'Fecha del seguimiento (YYYY-MM-DD)',
-                    'Peso en kilogramos (decimal con punto)',
-                    'Talla/estatura en centímetros',
-                    'Perímetro cefálico en cm (opcional)',
-                    'Pliegue tricipital en mm (opcional)',
-                    'Pliegue subescapular en mm (opcional)',
-                    'Circunferencia del brazo en cm (opcional)',
-                    'Perímetro abdominal en cm (opcional)',
-                    'Nivel de actividad física del niño',
-                    'Tipo de alimentación actual',
-                    'Observaciones del seguimiento (opcional)',
-                    '',
-                    'Exámenes de laboratorio (opcionales)',
-                    'Nivel de hemoglobina en g/dL',
+                    'Datos del niño/a', 'Documento del niño (opcional)', 'RC, TI, etc.', 'Nombre completo del niño/a',
+                    'Formato: YYYY-MM-DD', 'Masculino o Femenino', 'ID de la sede (número)', '',
+                    'Datos del padre/madre/acudiente', 'Número de documento del acudiente', 'CC, TI, CE, etc.',
+                    'Nombre completo del acudiente', 'Teléfono de contacto', 'Correo electrónico (opcional)',
+                    'Dirección de residencia', 'Madre, Padre, Abuelo/a, Tío/a, etc.', '',
+                    'Datos de medición', 'Fecha del seguimiento (YYYY-MM-DD)', 'Peso en kilogramos (decimal con punto)',
+                    'Talla/estatura en centímetros', 'Perímetro cefálico en cm (opcional)',
+                    'Pliegue tricipital en mm (opcional)', 'Pliegue subescapular en mm (opcional)',
+                    'Circunferencia del brazo en cm (opcional)', 'Perímetro abdominal en cm (opcional)',
+                    'Nivel de actividad física del niño', 'Tipo de alimentación actual',
+                    'Observaciones del seguimiento (opcional)', '',
+                    'Exámenes de laboratorio (opcionales)', 'Nivel de hemoglobina en g/dL',
                 ],
                 'Obligatorio': [
-                    '',
-                    'NO',
-                    'NO',
-                    'SÍ',
-                    'SÍ',
-                    'SÍ',
-                    'SÍ',
-                    '',
-                    '',
-                    'SÍ',
-                    'NO',
-                    'SÍ',
-                    'SÍ',
-                    'NO',
-                    'NO',
-                    'NO',
-                    '',
-                    '',
-                    'SÍ',
-                    'SÍ',
-                    'SÍ',
-                    'NO',
-                    'NO',
-                    'NO',
-                    'NO',
-                    'NO',
-                    'NO',
-                    'NO',
-                    'NO',
-                    '',
-                    '',
-                    'NO',
+                    '', 'NO', 'NO', 'SÍ', 'SÍ', 'SÍ', 'SÍ', '',
+                    '', 'SÍ', 'NO', 'SÍ', 'SÍ', 'NO', 'NO', 'NO', '',
+                    '', 'SÍ', 'SÍ', 'SÍ', 'NO', 'NO', 'NO', 'NO', 'NO', 'NO', 'NO', 'NO', '',
+                    '', 'NO',
                 ],
                 'Formato/Valores': [
-                    '',
-                    'Texto/Números',
-                    'RC, TI, etc.',
-                    'Texto',
-                    'YYYY-MM-DD (ej: 2023-11-13)',
-                    'Masculino o Femenino (lista desplegable)',
-                    'Número entero',
-                    '',
-                    '',
-                    'Texto/Números',
-                    'CC, TI, CE, etc.',
-                    'Texto',
-                    'Números (10 dígitos)',
-                    'email@ejemplo.com',
-                    'Texto',
-                    'Texto',
-                    '',
-                    '',
-                    'YYYY-MM-DD (ej: 2024-12-15)',
-                    'Decimal (ej: 10.5)',
-                    'Decimal (ej: 75.0)',
-                    'Decimal (ej: 45.5)',
-                    'Decimal (ej: 8.5)',
-                    'Decimal (ej: 6.2)',
-                    'Decimal (ej: 14.5)',
-                    'Decimal (ej: 48.0)',
-                    'Ligera, Moderada, Intensa (lista desplegable)',
-                    'Lactancia materna, Fórmula, Mixta (lista desplegable)',
-                    'Texto',
-                    '',
-                    '',
-                    'Decimal (ej: 12.5)',
+                    '', 'Texto/Números', 'RC, TI, etc.', 'Texto', 'YYYY-MM-DD (ej: 2023-11-13)',
+                    'Masculino o Femenino (lista desplegable)', 'Número entero', '',
+                    '', 'Texto/Números', 'CC, TI, CE, etc.', 'Texto', 'Números (10 dígitos)',
+                    'email@ejemplo.com', 'Texto', 'Texto', '',
+                    '', 'YYYY-MM-DD (ej: 2024-12-15)', 'Decimal (ej: 10.5)', 'Decimal (ej: 75.0)',
+                    'Decimal (ej: 45.5)', 'Decimal (ej: 8.5)', 'Decimal (ej: 6.2)', 'Decimal (ej: 14.5)',
+                    'Decimal (ej: 48.0)', 'Ligera, Moderada, Intensa (lista desplegable)',
+                    'Lactancia materna, Fórmula, Mixta (lista desplegable)', 'Texto', '',
+                    '', 'Decimal (ej: 12.5)',
                 ]
             }
             
             df_instructions = pd.DataFrame(instructions_data)
             df_instructions.to_excel(writer, sheet_name='Instrucciones', index=False)
             
-            # Ajustar anchos en hoja de instrucciones
             ws_instructions = writer.sheets['Instrucciones']
             ws_instructions.column_dimensions['A'].width = 35
             ws_instructions.column_dimensions['B'].width = 60

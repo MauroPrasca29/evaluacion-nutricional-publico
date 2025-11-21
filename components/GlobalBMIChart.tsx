@@ -3,37 +3,75 @@
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { useState } from "react"
-import type { GlobalBMIStats, ThemeColors } from "@/types"
-
-const globalBMIData = [
-  { ageGroup: "0-2 años", normal: 45, riesgo: 8, moderado: 3, severo: 1 },
-  { ageGroup: "3-5 años", normal: 52, riesgo: 7, moderado: 4, severo: 2 },
-  { ageGroup: "6-8 años", normal: 38, riesgo: 5, moderado: 2, severo: 1 },
-  { ageGroup: "9-11 años", normal: 21, riesgo: 3, moderado: 1, severo: 1 },
-]
-
-const sedeData = [
-  { sede: "Centro", total: 85, normal: 62, alertas: 23 },
-  { sede: "Norte", total: 67, normal: 48, alertas: 19 },
-  { sede: "Sur", total: 58, normal: 46, alertas: 12 },
-]
+import { useState, useEffect } from "react"
+import type { ThemeColors } from "@/types"
 
 const COLORS = ["#10b981", "#f59e0b", "#ef4444", "#7c2d12"]
 
 interface GlobalBMIChartProps {
-  data?: GlobalBMIStats
   theme?: ThemeColors
 }
 
-export function GlobalBMIChart({ data, theme }: GlobalBMIChartProps) {
+interface NutritionalStats {
+  por_edad: Array<{
+    ageGroup: string
+    normal: number
+    bajo: number
+    medio: number
+    alto: number
+  }>
+  general: {
+    normal: number
+    bajo: number
+    medio: number
+    alto: number
+  }
+  por_genero: Array<{
+    genero: string
+    normal: number
+    bajo: number
+    medio: number
+    alto: number
+  }>
+  por_sede: Array<{
+    sede: string
+    total: number
+    normal: number
+    alertas: number
+  }>
+}
+
+export function GlobalBMIChart({ theme }: GlobalBMIChartProps) {
   const [selectedSede, setSelectedSede] = useState("todas")
+  const [stats, setStats] = useState<NutritionalStats | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const response = await fetch('/api/children/nutritional-stats')
+        if (response.ok) {
+          const data = await response.json()
+          setStats(data)
+        }
+      } catch (error) {
+        console.error('Error cargando estadísticas nutricionales:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchStats()
+  }, [])
+
+  if (loading || !stats) {
+    return <div className="text-center py-8">Cargando estadísticas...</div>
+  }
 
   const pieData = [
-    { name: "Normal", value: 156, color: "#10b981" },
-    { name: "Riesgo", value: 23, color: "#f59e0b" },
-    { name: "Moderado", value: 10, color: "#ef4444" },
-    { name: "Severo", value: 5, color: "#7c2d12" },
+    { name: "Normal", value: stats.general.normal, color: "#10b981" },
+    { name: "Riesgo", value: stats.general.bajo, color: "#f59e0b" },
+    { name: "Moderado", value: stats.general.medio, color: "#ef4444" },
   ]
 
   return (
@@ -45,31 +83,19 @@ export function GlobalBMIChart({ data, theme }: GlobalBMIChartProps) {
               <CardTitle>Estado Nutricional Global por Edad</CardTitle>
               <CardDescription>Distribución del IMC por grupos de edad</CardDescription>
             </div>
-            <Select value={selectedSede} onValueChange={setSelectedSede}>
-              <SelectTrigger className="w-48">
-                <SelectValue placeholder="Filtrar por sede" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="todas">Todas las sedes</SelectItem>
-                <SelectItem value="centro">Centro</SelectItem>
-                <SelectItem value="norte">Norte</SelectItem>
-                <SelectItem value="sur">Sur</SelectItem>
-              </SelectContent>
-            </Select>
           </div>
         </CardHeader>
         <CardContent>
           <div className="h-80">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={globalBMIData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+              <BarChart data={stats.por_edad} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="ageGroup" />
                 <YAxis />
                 <Tooltip />
                 <Bar dataKey="normal" stackId="a" fill="#10b981" name="Normal" />
-                <Bar dataKey="riesgo" stackId="a" fill="#f59e0b" name="Riesgo" />
-                <Bar dataKey="moderado" stackId="a" fill="#ef4444" name="Moderado" />
-                <Bar dataKey="severo" stackId="a" fill="#7c2d12" name="Severo" />
+                <Bar dataKey="bajo" stackId="a" fill="#f59e0b" name="Riesgo" />
+                <Bar dataKey="medio" stackId="a" fill="#ef4444" name="Moderado" />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -77,6 +103,7 @@ export function GlobalBMIChart({ data, theme }: GlobalBMIChartProps) {
       </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Distribución General */}
         <Card>
           <CardHeader>
             <CardTitle>Distribución General</CardTitle>
@@ -116,31 +143,25 @@ export function GlobalBMIChart({ data, theme }: GlobalBMIChartProps) {
           </CardContent>
         </Card>
 
+        {/* Distribución por Género */}
         <Card>
           <CardHeader>
-            <CardTitle>Estadísticas por Sede</CardTitle>
-            <CardDescription>Distribución de niños por ubicación</CardDescription>
+            <CardTitle>Distribución por Género</CardTitle>
+            <CardDescription>Estado nutricional por sexo</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {sedeData.map((sede, index) => (
-                <div key={index} className="space-y-2">
-                  <div className="flex justify-between items-center">
-                    <span className="font-medium">{sede.sede}</span>
-                    <span className="text-sm text-gray-600">{sede.total} niños</span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div
-                      className="bg-green-500 h-2 rounded-full"
-                      style={{ width: `${(sede.normal / sede.total) * 100}%` }}
-                    ></div>
-                  </div>
-                  <div className="flex justify-between text-xs text-gray-500">
-                    <span>Normal: {sede.normal}</span>
-                    <span>Alertas: {sede.alertas}</span>
-                  </div>
-                </div>
-              ))}
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={stats.por_genero} layout="vertical">
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis type="number" />
+                  <YAxis dataKey="genero" type="category" />
+                  <Tooltip />
+                  <Bar dataKey="normal" stackId="a" fill="#10b981" name="Normal" />
+                  <Bar dataKey="bajo" stackId="a" fill="#f59e0b" name="Riesgo" />
+                  <Bar dataKey="medio" stackId="a" fill="#ef4444" name="Moderado" />
+                </BarChart>
+              </ResponsiveContainer>
             </div>
           </CardContent>
         </Card>

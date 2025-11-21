@@ -273,3 +273,20 @@ class EvaluacionNutricional(Base):
     fecha_evaluacion = Column(DateTime(timezone=True), server_default=func.now())
     
     seguimiento = relationship("Seguimiento", backref="evaluacion_nutricional")
+
+# ===============================
+# Tabla: actividad_reciente
+# ===============================
+class ActividadReciente(Base):
+    __tablename__ = "actividad_reciente"
+
+    id_actividad = Column(Integer, primary_key=True, index=True)
+    tipo_actividad = Column(String(50), nullable=False, index=True)
+    descripcion = Column(Text, nullable=False)
+    entidad_relacionada = Column(String(100))
+    usuario_id = Column(Integer, ForeignKey("usuarios.id_usuario"))
+    infante_id = Column(Integer, ForeignKey("infantes.id_infante"))
+    seguimiento_id = Column(Integer, ForeignKey("seguimientos.id_seguimiento"))
+    nivel_importancia = Column(String(20), default="normal")
+    fecha_creacion = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    icono = Column(String(50))

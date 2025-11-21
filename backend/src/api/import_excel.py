@@ -25,6 +25,8 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from sqlalchemy.orm import Session
 from src.db.session import get_db
+from src.services.activity_service import ActivityService
+
 
 # --------------------------------------------------------------------------------------
 # Config
@@ -314,6 +316,8 @@ async def download_template():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al generar plantilla: {str(e)}")
 
+import time as time_module
+
 @router.post("/upload", summary="Cargar Excel e insertar infantes y seguimientos")
 async def upload_children_excel(
     file: UploadFile = File(...),
@@ -327,16 +331,54 @@ async def upload_children_excel(
     if not filename or not filename.lower().endswith(ALLOWED_EXTS):
         raise HTTPException(status_code=400, detail="Formato de archivo inválido. Use .xlsx o .xls")
 
+    # ⏱️ Iniciar contador de tiempo
+    start_time = time_module.time()
+    
     try:
+        print(f"📥 Recibiendo archivo: {filename}")
+        
         # Leer contenido del archivo
         content = await file.read()
+        file_size_mb = len(content) / (1024 * 1024)
+        print(f"📊 Tamaño del archivo: {file_size_mb:.2f} MB")
         
         # Procesar con ExcelService
         from src.services.excel_service import ExcelService
+        
+        print(f"⚙️ Iniciando procesamiento con ExcelService...")
+        processing_start = time_module.time()
+        
         result = ExcelService.process_children_excel(content, db)
+        
+        processing_time = time_module.time() - processing_start
+        print(f"✅ Procesamiento completado en {processing_time:.2f} segundos")
         
         if not result["success"]:
             raise HTTPException(status_code=400, detail=result.get("error", "Error al procesar el archivo"))
+        
+        # Después de procesar el Excel - registrar actividad
+        sede_nombre = "Importación Excel"
+        if result.get("data") and len(result["data"]) > 0:
+            # Intentar obtener sede_id del primer registro procesado
+            primer_registro = result["data"][0]
+            sede_id = primer_registro.get("sede_id")
+            if sede_id:
+                from src.db.models import Sede
+                sede = db.query(Sede).filter(Sede.id_sede == sede_id).first()
+                if sede:
+                    sede_nombre = sede.nombre
+
+        print(f"📝 Registrando actividad en el sistema...")
+        ActivityService.registrar_importacion(
+            db=db,
+            sede_nombre=sede_nombre,
+            cantidad=result.get("processed_count", 0),
+            usuario_id=1  # TODO: Obtener del token JWT
+        )
+        
+        # ⏱️ Calcular tiempo total
+        total_time = time_module.time() - start_time
+        print(f"🎉 Importación completada exitosamente en {total_time:.2f} segundos")
         
         return JSONResponse(
             status_code=200,
@@ -347,13 +389,18 @@ async def upload_children_excel(
                 "processed_count": result.get("processed_count", 0),
                 "error_count": result.get("error_count", 0),
                 "errors": result.get("errors", []),
-                "data": result.get("data", [])
+                "data": result.get("data", []),
+                "processing_time": round(total_time, 2)  # ⏱️ Agregar tiempo de procesamiento
             }
         )
         
     except HTTPException:
         raise
     except Exception as e:
+        elapsed = time_module.time() - start_time
+        print(f"❌ Error después de {elapsed:.2f} segundos: {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Error inesperado al procesar el archivo: {str(e)}")
 
 @router.get("/status/{import_id}", summary="Consultar estado de import")
@@ -381,4 +428,5 @@ async def search_in_import(
     if not store.load():
         raise HTTPException(status_code=404, detail="No existe vector store para ese import_id")
     results = store.search(q, top_k=top_k)
+
     return [SearchResult(row_index=i, score=s, payload=store.payloads[i]) for i, s in results]

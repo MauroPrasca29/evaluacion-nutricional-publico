@@ -7,6 +7,9 @@ from pydantic import BaseModel
 from src.db.session import get_db
 from src.db.models import Seguimiento, DatoAntropometrico, Examen, EvaluacionNutricional
 from src.services.nutrition_service import NutritionService
+from src.services.activity_service import ActivityService
+
+
 
 router = APIRouter()
 
@@ -161,6 +164,30 @@ def create_followup(followup_data: FollowupCreate, db: Session = Depends(get_db)
         db.commit()
         db.refresh(nuevo_seguimiento)
         
+        # Registrar actividad de seguimiento (DESPUÉS de db.commit())
+        if infante:  # 'infante' ya existe del bloque anterior
+            try:
+                # Registrar actividad de seguimiento
+                ActivityService.registrar_seguimiento(
+                    db=db,
+                    nombre_nino=infante.nombre,
+                    usuario_id=1,  # TODO: Obtener del token JWT
+                    infante_id=infante.id_infante,
+                    seguimiento_id=nuevo_seguimiento.id_seguimiento
+                )
+
+                # Registrar alerta si el nivel de riesgo es Medio o Alto
+                if 'assessment' in locals() and assessment.get("risk_level") in ["Medio", "Alto"]:
+                    ActivityService.registrar_alerta(
+                        db=db,
+                        nombre_nino=infante.nombre,
+                        nivel_riesgo=assessment.get("risk_level"),
+                        infante_id=infante.id_infante,
+                        seguimiento_id=nuevo_seguimiento.id_seguimiento
+                    )
+            except Exception as act_error:
+                print(f"Error registrando actividad: {act_error}")
+        
         return {
             "id_seguimiento": nuevo_seguimiento.id_seguimiento,
             "infante_id": nuevo_seguimiento.infante_id,
@@ -171,8 +198,6 @@ def create_followup(followup_data: FollowupCreate, db: Session = Depends(get_db)
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error al crear seguimiento: {str(e)}")
-
-
 
 
 @router.get("/{seguimiento_id}/evaluacion")

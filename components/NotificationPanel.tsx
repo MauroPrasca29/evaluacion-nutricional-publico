@@ -1,7 +1,8 @@
 "use client"
 
-import { useState } from "react"
-import { Bell, X, AlertTriangle, Info, CheckCircle, Clock } from "lucide-react"
+import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
+import { Bell, X, AlertTriangle, Info, CheckCircle, Clock, Upload, FileText } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -15,75 +16,80 @@ interface Notification {
   time: string
   read: boolean
   childName?: string
+  infanteId?: number
+  seguimientoId?: number
+  userName?: string
+  tipoActividad?: string
 }
 
 interface NotificationPanelProps {
   isOpen: boolean
   onClose: () => void
+  onAlertsUpdate?: () => void
 }
 
-export function NotificationPanel({ isOpen, onClose }: NotificationPanelProps) {
-  const [notifications, setNotifications] = useState<Notification[]>([
-    {
-      id: 1,
-      type: "alert",
-      title: "Alerta Nutricional",
-      message: "María González presenta signos de desnutrición moderada. Requiere seguimiento inmediato.",
-      time: "Hace 2 horas",
-      read: false,
-      childName: "María González",
-    },
-    {
-      id: 2,
-      type: "warning",
-      title: "Seguimiento Pendiente",
-      message: "Carlos Rodríguez tiene una cita de seguimiento programada para mañana.",
-      time: "Hace 4 horas",
-      read: false,
-      childName: "Carlos Rodríguez",
-    },
-    {
-      id: 3,
-      type: "info",
-      title: "Nuevo Registro",
-      message: "Se ha registrado un nuevo niño en el sistema: Ana López.",
-      time: "Hace 1 día",
-      read: true,
-      childName: "Ana López",
-    },
-    {
-      id: 4,
-      type: "success",
-      title: "Evaluación Completada",
-      message: "Se completó exitosamente la evaluación nutricional de Pedro Martínez.",
-      time: "Hace 2 días",
-      read: true,
-      childName: "Pedro Martínez",
-    },
-    {
-      id: 5,
-      type: "alert",
-      title: "Riesgo de Anemia",
-      message: "Sofía Ramírez presenta síntomas compatibles con anemia. Revisar exámenes.",
-      time: "Hace 3 días",
-      read: false,
-      childName: "Sofía Ramírez",
-    },
-  ])
+export function NotificationPanel({ isOpen, onClose, onAlertsUpdate }: NotificationPanelProps) {
+  const router = useRouter()
+  const [notifications, setNotifications] = useState<Notification[]>([])
+  const [loading, setLoading] = useState(true)
 
-  const markAsRead = (id: number) => {
+  useEffect(() => {
+    if (isOpen) {
+      fetchNotifications()
+    }
+  }, [isOpen])
+
+  const fetchNotifications = async () => {
+    setLoading(true)
+    try {
+      const response = await fetch('/api/children/alerts?limit=20')
+      if (response.ok) {
+        const data = await response.json()
+        setNotifications(data)
+      }
+    } catch (error) {
+      console.error('Error cargando notificaciones:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleNotificationClick = (notification: Notification) => {
+    if (notification.infanteId && notification.tipoActividad !== "importacion") {
+      // Navegar al perfil del infante (solo si no es importación)
+      router.push(`/children/${notification.infanteId}`)
+      onClose()
+    }
+  }
+
+  const markAsRead = (id: number, e: React.MouseEvent) => {
+    e.stopPropagation()
     setNotifications((prev) => prev.map((notif) => (notif.id === id ? { ...notif, read: true } : notif)))
+  }
+
+  const deleteNotification = (id: number, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setNotifications((prev) => prev.filter((notif) => notif.id !== id))
+    if (onAlertsUpdate) {
+      onAlertsUpdate()
+    }
   }
 
   const markAllAsRead = () => {
     setNotifications((prev) => prev.map((notif) => ({ ...notif, read: true })))
+    if (onAlertsUpdate) {
+      onAlertsUpdate()
+    }
   }
 
-  const deleteNotification = (id: number) => {
-    setNotifications((prev) => prev.filter((notif) => notif.id !== id))
-  }
-
-  const getIcon = (type: string) => {
+  const getIcon = (type: string, tipoActividad?: string) => {
+    if (tipoActividad === "importacion") {
+      return <Upload className="w-4 h-4 text-purple-500" />
+    }
+    if (tipoActividad === "seguimiento") {
+      return <FileText className="w-4 h-4 text-blue-500" />
+    }
+    
     switch (type) {
       case "alert":
         return <AlertTriangle className="w-4 h-4 text-red-500" />
@@ -95,21 +101,6 @@ export function NotificationPanel({ isOpen, onClose }: NotificationPanelProps) {
         return <CheckCircle className="w-4 h-4 text-green-500" />
       default:
         return <Bell className="w-4 h-4 text-gray-500" />
-    }
-  }
-
-  const getBadgeColor = (type: string) => {
-    switch (type) {
-      case "alert":
-        return "bg-red-100 text-red-800"
-      case "warning":
-        return "bg-orange-100 text-orange-800"
-      case "info":
-        return "bg-blue-100 text-blue-800"
-      case "success":
-        return "bg-green-100 text-green-800"
-      default:
-        return "bg-gray-100 text-gray-800"
     }
   }
 
@@ -138,66 +129,82 @@ export function NotificationPanel({ isOpen, onClose }: NotificationPanelProps) {
           </div>
 
           <ScrollArea className="h-96">
-            <div className="space-y-1">
-              {notifications.map((notification) => (
-                <div
-                  key={notification.id}
-                  className={`p-4 border-b border-slate-100 hover:bg-slate-50 transition-colors ${
-                    !notification.read ? "bg-blue-50/50" : ""
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-start gap-3 flex-1">
-                      {getIcon(notification.type)}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h4
-                            className={`text-sm font-medium text-slate-800 ${
-                              !notification.read ? "font-semibold" : ""
-                            }`}
-                          >
-                            {notification.title}
-                          </h4>
-                          {!notification.read && <div className="w-2 h-2 bg-blue-500 rounded-full"></div>}
-                        </div>
-                        <p className="text-sm text-slate-600 mb-2">{notification.message}</p>
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs text-slate-500">{notification.time}</span>
-                          {notification.childName && (
-                            <Badge variant="outline" className="text-xs">
-                              {notification.childName}
-                            </Badge>
-                          )}
+            {loading ? (
+              <div className="p-8 text-center">
+                <p className="text-slate-500">Cargando notificaciones...</p>
+              </div>
+            ) : (
+              <div className="space-y-1">
+                {notifications.map((notification) => (
+                  <div
+                    key={notification.id}
+                    className={`p-4 border-b border-slate-100 hover:bg-slate-50 transition-colors ${
+                      notification.infanteId && notification.tipoActividad !== "importacion" ? 'cursor-pointer' : ''
+                    } ${!notification.read ? "bg-blue-50/50" : ""}`}
+                    onClick={() => handleNotificationClick(notification)}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-3 flex-1">
+                        {getIcon(notification.type, notification.tipoActividad)}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <h4
+                              className={`text-sm font-medium text-slate-800 ${
+                                !notification.read ? "font-semibold" : ""
+                              }`}
+                            >
+                              {notification.title}
+                            </h4>
+                            {!notification.read && <div className="w-2 h-2 bg-blue-500 rounded-full"></div>}
+                          </div>
+                          <p className="text-sm text-slate-600 mb-2">{notification.message}</p>
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-slate-400">{notification.time}</span>
+                            <div className="flex items-center gap-2">
+                              {/* Solo mostrar el nombre del usuario si NO es una alerta */}
+                              {notification.userName && notification.tipoActividad !== "alerta" && (
+                                <Badge variant="outline" className="text-xs">
+                                  {notification.userName}
+                                </Badge>
+                              )}
+                              {/* Mostrar el nombre del infante solo en alertas */}
+                              {notification.childName && notification.tipoActividad === "alerta" && (
+                                <Badge variant="outline" className="text-xs bg-red-50 text-red-700 border-red-200">
+                                  {notification.childName}
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      {!notification.read && (
+                      <div className="flex flex-col gap-1">
+                        {!notification.read && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => markAsRead(notification.id, e)}
+                            className="h-6 px-2 text-xs"
+                          >
+                            Marcar leída
+                          </Button>
+                        )}
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => markAsRead(notification.id)}
-                          className="h-6 px-2 text-xs"
+                          onClick={(e) => deleteNotification(notification.id, e)}
+                          className="h-6 px-2 text-xs text-red-600 hover:text-red-700"
                         >
-                          Marcar leída
+                          <X className="w-3 h-3" />
                         </Button>
-                      )}
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => deleteNotification(notification.id)}
-                        className="h-6 px-2 text-xs text-red-600 hover:text-red-700"
-                      >
-                        <X className="w-3 h-3" />
-                      </Button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </ScrollArea>
 
-          {notifications.length === 0 && (
+          {!loading && notifications.length === 0 && (
             <div className="p-8 text-center">
               <Bell className="w-12 h-12 text-slate-300 mx-auto mb-4" />
               <p className="text-slate-500">No hay notificaciones</p>
