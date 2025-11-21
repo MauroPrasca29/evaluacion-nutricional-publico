@@ -1,13 +1,8 @@
-// app/api/auth-login/route.ts
-import { NextResponse } from 'next/server'
-
-const BACKEND_BASE = "https://backend-production-73f7.up.railway.app"
+const BACKEND_BASE = process.env.BACKEND_BASE || 'http://localhost:8000'
 
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-
-    console.log(`🔄 [Auth-Login] Proxy → ${BACKEND_BASE}/api/auth/login`)
 
     const response = await fetch(`${BACKEND_BASE}/api/auth/login`, {
       method: 'POST',
@@ -18,15 +13,7 @@ export async function POST(request: Request) {
       credentials: 'include',
     })
 
-    const text = await response.text()
-    let data: any = {}
-
-    try {
-      data = text ? JSON.parse(text) : {}
-    } catch (parseError) {
-      console.error("❌ [Auth-Login] Error parseando JSON:", parseError)
-      console.error("Respuesta cruda:", text)
-    }
+    const data = await response.json()
 
     return new Response(JSON.stringify(data), {
       status: response.status,
@@ -37,13 +24,9 @@ export async function POST(request: Request) {
       },
     })
   } catch (error: any) {
-    console.error("❌ [Auth-Login Error]:", error)
-
+    console.error('[Auth Login Error]', error)
     return new Response(
-      JSON.stringify({
-        detail: "Error en login",
-        error: error?.message || "Error desconocido",
-      }),
+      JSON.stringify({ detail: 'Error en login', error: error.message }),
       {
         status: 500,
         headers: { 'Content-Type': 'application/json' },
