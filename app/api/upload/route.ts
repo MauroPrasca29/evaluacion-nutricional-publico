@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from "next/server"
 const BACKEND_BASE = process.env.BACKEND_BASE || "http://localhost:8000"
 
 // ⚡ Configuración para permitir requests largos
-export const maxDuration = 600 // 10 minutos (solo en Vercel Pro/Enterprise)
+export const maxDuration = 300 // 10 minutos (solo en Vercel Pro/Enterprise)
 export const dynamic = 'force-dynamic'
 
 export async function POST(request: NextRequest) {
