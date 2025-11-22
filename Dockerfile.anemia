@@ -1,34 +1,62 @@
-# Dockerfile.anemia - Servicio de detección de anemia con ONNX Runtime
+# Dockerfile.anemia - Servicio de Detección de Anemia con ONNX Runtime
+# Imagen base optimizada python:3.11-slim
 
-FROM python:3.12-slim
+FROM python:3.11-slim
 
-# Variables para que no intente usar terminal interactiva
+# Metadata
+LABEL maintainer="Evaluacion Nutricional"
+LABEL description="Anemia Detection Service using ONNX Model from Hugging Face"
+
+# Configuración de variables de entorno
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+ENV PIP_NO_CACHE_DIR=1
 
-# Crear directorio de la app
+# Crear directorio de trabajo
 WORKDIR /app
 
-# Instalar dependencias del sistema necesarias para opencv
-RUN apt-get update && apt-get install -y \
-    libglib2.0-0 libsm6 libxext6 libxrender1 \
-    && rm -rf /var/lib/apt/lists/*
+# Instalar dependencias del sistema (solo lo esencial para OpenCV)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender1 \
+    curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
-# Copiar requirements e instalar
-COPY backend/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Copiar requirements.txt e instalar dependencias Python
+COPY anemia-service/requirements.txt .
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
-# Crear carpeta para el modelo
-RUN mkdir -p /app/models
+# Crear directorios necesarios
+RUN mkdir -p /app/models && \
+    mkdir -p /app/logs
 
-# Copiar el modelo ONNX
-COPY backend/models/hb_regressor_infants_ft.onnx /app/models/hb_regressor_infants_ft.onnx
+# Descargar el modelo ONNX desde Hugging Face durante el build
+# Esto evita descargas repetidas en cada contenedor
+RUN python -c "\
+from huggingface_hub import snapshot_download; \
+import os; \
+print('📥 Descargando modelo de Hugging Face...'); \
+snapshot_download(\
+    repo_id='mprasca/anemia_model', \
+    repo_type='model', \
+    cache_dir='/app/models', \
+    local_dir='/app/models/anemia_model'\
+); \
+print('✅ Modelo descargado exitosamente')" || echo "⚠️  Modelo será descargado al inicio"
 
-# Copiar el código del servicio
-COPY backend/src/api/vision_anemia_onnx.py /app/vision_anemia_onnx.py
+# Copiar código del servicio
+COPY anemia-service/main.py /app/main.py
 
 # Exponer puerto
 EXPOSE 8000
 
-# Comando por defecto: lanzar FastAPI con uvicorn
-CMD ["uvicorn", "vision_anemia_onnx:app", "--host", "0.0.0.0", "--port", "8000"]
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Comando de inicio
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

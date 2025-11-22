@@ -422,8 +422,9 @@ export function FollowUpResults({ child, followUpData, theme, onClose, onSaveToP
           loadGrowthCharts()
         }
       }} className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="results">Resultados</TabsTrigger>
+          <TabsTrigger value="anemia">Estado Anémico</TabsTrigger>
           <TabsTrigger value="nutrition">Recomendaciones Nutricionales</TabsTrigger>
           <TabsTrigger value="growth">Curvas de Crecimiento</TabsTrigger>
         </TabsList>
@@ -665,6 +666,195 @@ export function FollowUpResults({ child, followUpData, theme, onClose, onSaveToP
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="anemia" className="space-y-6">
+          {(() => {
+            const anemiaResultStr = sessionStorage.getItem('anemia_result')
+            const anemiaResult = anemiaResultStr ? JSON.parse(anemiaResultStr) : null
+            
+            if (!anemiaResult) {
+              return (
+                <Card className={`${theme.cardBorder} bg-gradient-to-br from-white to-amber-50`}>
+                  <CardContent className="p-8">
+                    <div className="text-center space-y-3">
+                      <AlertCircle className="w-12 h-12 text-amber-500 mx-auto" />
+                      <h3 className="text-lg font-semibold text-slate-800">Sin información de anemia</h3>
+                      <p className="text-slate-600">
+                        No se han proporcionado datos de hemoglobina ni fotografía de ojos para evaluar anemia.
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+              )
+            }
+            
+            return (
+              <Card className={`${theme.cardBorder} bg-gradient-to-br ${
+                anemiaResult.isAnemic 
+                  ? 'from-red-50 to-orange-50 border-red-300' 
+                  : 'from-green-50 to-emerald-50 border-green-300'
+              }`}>
+                <CardHeader>
+                  <CardTitle className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                    <Activity className="w-6 h-6" />
+                    Evaluación de Anemia
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  {/* Estado de anemia */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <Card className="border-2 shadow-sm">
+                      <CardContent className="p-6">
+                        <div className="text-center space-y-2">
+                          <div className="text-sm text-slate-600 font-medium">Fuente de datos</div>
+                          <Badge className="bg-blue-100 text-blue-800 text-sm py-1">
+                            {anemiaResult.source === 'hemoglobina' 
+                              ? 'Examen de sangre' 
+                              : 'Análisis de imagen'}
+                          </Badge>
+                        </div>
+                      </CardContent>
+                    </Card>
+                    
+                    <Card className="border-2 shadow-sm">
+                      <CardContent className="p-6">
+                        <div className="text-center space-y-2">
+                          <div className="text-sm text-slate-600 font-medium">Hemoglobina estimada</div>
+                          <div className="text-3xl font-bold text-slate-800">
+                            {anemiaResult.value.toFixed(2)}
+                          </div>
+                          <div className="text-xs text-slate-600">g/dL</div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                    
+                    <Card className="border-2 shadow-sm">
+                      <CardContent className="p-6">
+                        <div className="text-center space-y-2">
+                          <div className="text-sm text-slate-600 font-medium">Umbral OMS</div>
+                          <div className="text-3xl font-bold text-slate-800">
+                            {anemiaResult.threshold.toFixed(2)}
+                          </div>
+                          <div className="text-xs text-slate-600">g/dL</div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+
+                  {/* Resultado principal */}
+                  <div className={`p-6 rounded-lg border-2 ${
+                    anemiaResult.isAnemic
+                      ? 'bg-red-100 border-red-400'
+                      : 'bg-green-100 border-green-400'
+                  }`}>
+                    <div className="flex items-center gap-4">
+                      {anemiaResult.isAnemic ? (
+                        <AlertTriangle className="w-8 h-8 text-red-600 flex-shrink-0" />
+                      ) : (
+                        <CheckCircle className="w-8 h-8 text-green-600 flex-shrink-0" />
+                      )}
+                      <div>
+                        <h3 className={`text-xl font-bold ${
+                          anemiaResult.isAnemic ? 'text-red-700' : 'text-green-700'
+                        }`}>
+                          {anemiaResult.label}
+                        </h3>
+                        <p className={`text-sm ${
+                          anemiaResult.isAnemic ? 'text-red-600' : 'text-green-600'
+                        }`}>
+                          Hemoglobina {anemiaResult.isAnemic ? 'por debajo' : 'dentro'} del umbral normal
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Recomendaciones */}
+                  <Card className="bg-white border">
+                    <CardHeader>
+                      <CardTitle className="text-base font-semibold text-slate-800">Recomendaciones</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      {anemiaResult.isAnemic && (
+                        <div className="space-y-2">
+                          <div className="flex gap-3">
+                            <AlertTriangle className="w-5 h-5 text-orange-600 flex-shrink-0 mt-0.5" />
+                            <div>
+                              <p className="font-semibold text-slate-800">Se recomienda realizar un examen de sangre</p>
+                              <p className="text-sm text-slate-600 mt-1">
+                                Para confirmar anemia y determinar su causa (deficiencia de hierro, vitamina B12, etc.)
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      
+                      <div className="space-y-2">
+                        <div className="flex gap-3">
+                          <CheckCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                          <div>
+                            <p className="font-semibold text-slate-800">Recomendaciones nutricionales</p>
+                            <p className="text-sm text-slate-600 mt-1">
+                              Aumentar ingesta de alimentos ricos en hierro, ácido fólico y vitamina B12:
+                            </p>
+                            <ul className="text-sm text-slate-600 mt-2 ml-4 list-disc space-y-1">
+                              <li>Carnes rojas magras</li>
+                              <li>Hígado y otras vísceras</li>
+                              <li>Huevos</li>
+                              <li>Legumbres (lentejas, frijoles)</li>
+                              <li>Frutas cítricas (vitamina C para mejor absorción)</li>
+                            </ul>
+                          </div>
+                        </div>
+                      </div>
+
+                      {anemiaResult.source === 'modelo' && (
+                        <div className="space-y-2 mt-4 pt-4 border-t">
+                          <div className="flex gap-3">
+                            <FileText className="w-5 h-5 text-purple-600 flex-shrink-0 mt-0.5" />
+                            <div>
+                              <p className="font-semibold text-slate-800">Nota importante</p>
+                              <p className="text-sm text-slate-600 mt-1">
+                                Este resultado es una estimación basada en análisis de imagen. 
+                                {anemiaResult.isAnemic 
+                                  ? ' Se recomienda confirmar con un examen de sangre.'
+                                  : ' Se recomienda confirmar con un examen de sangre si hay síntomas.'}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  {/* Parámetros técnicos (si es del modelo) */}
+                  {anemiaResult.source === 'modelo' && (
+                    <Card className="bg-slate-50 border">
+                      <CardHeader>
+                        <CardTitle className="text-base font-semibold text-slate-800">Parámetros de análisis</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                          <div>
+                            <p className="text-slate-600">Diferencia vs. umbral:</p>
+                            <p className={`font-semibold ${
+                              anemiaResult.isAnemic ? 'text-red-600' : 'text-green-600'
+                            }`}>
+                              {(anemiaResult.value - anemiaResult.threshold).toFixed(2)} g/dL
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-slate-600">Método:</p>
+                            <p className="font-semibold text-slate-800">Análisis digital de imagen</p>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+                </CardContent>
+              </Card>
+            )
+          })()}
         </TabsContent>
 
         <TabsContent value="nutrition" className="space-y-6">

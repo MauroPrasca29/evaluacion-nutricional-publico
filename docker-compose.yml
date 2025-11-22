@@ -22,21 +22,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # ===== REDIS (para tareas asíncronas) =====
-  redis:
-    image: redis:7-alpine
-    container_name: nutricion_redis
-    restart: unless-stopped
-    ports:
-      - "6379:6379"
-    networks:
-      - nutricion_network
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 3
-
   # ===== BACKEND (FastAPI) =====
   backend:
     build:
@@ -44,16 +29,11 @@ services:
       dockerfile: Dockerfile.backend
     container_name: nutricion_backend
     restart: unless-stopped
-    depends_on:
-      redis:
-        condition: service_healthy
     environment:
       DATABASE_URL: ${DATABASE_URL}
       SECRET_KEY: ${SECRET_KEY:-tu_clave_secreta_super_segura}
       ALGORITHM: ${ALGORITHM:-HS256}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-60}
-      REDIS_URL: redis://redis:6379/0
-      ANEMIA_ASYNC: "true"
       PYTHONPATH: /app
     ports:
       - "8000:8000"
@@ -79,29 +59,33 @@ services:
       timeout: 10s
       retries: 3
 
-  # ===== CELERY WORKER (tareas asíncronas) =====
-  # Desactivado temporalmente - no es necesario para funcionalidad principal
-  # celery_worker:
-  #   build:
-  #     context: .
-  #     dockerfile: Dockerfile.backend
-  #   container_name: nutricion_celery
-  #   restart: unless-stopped
-  #   depends_on:
-  #     - redis
-  #     - backend
-  #   environment:
-  #     DATABASE_URL: ${DATABASE_URL}
-  #     REDIS_URL: redis://redis:6379/0
-  #     ANEMIA_ASYNC: "true"
-  #     PYTHONPATH: /app
-  #   volumes:
-  #     - ./backend:/app
-  #     - ./backend/uploads:/app/uploads
-  #     - ./backend/models:/app/models
-  #   networks:
-  #     - nutricion_network
-  #   command: celery -A src.tasks.celery_app worker --loglevel=info
+  # ===== CELERY WORKER (tareas asíncronas) - ELIMINADO =====
+  # Ya no necesario: El servicio de anemia utiliza FastAPI directamente
+
+  # ===== ANEMIA SERVICE (Detección de Anemia con ONNX) =====
+  anemia-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.anemia
+    container_name: anemia_service
+    restart: unless-stopped
+    environment:
+      PYTHONUNBUFFERED: 1
+      PYTHONDONTWRITEBYTECODE: 1
+    ports:
+      - "8001:8000"
+    volumes:
+      - ./anemia-service:/app
+      - anemia_models:/app/models
+      - anemia_logs:/app/logs
+    networks:
+      - nutricion_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
 
   # ===== FRONTEND (Next.js) =====
   frontend:
@@ -137,6 +121,10 @@ networks:
 
 volumes:
   postgres_data:
+    driver: local
+  anemia_models:
+    driver: local
+  anemia_logs:
     driver: local
 
 

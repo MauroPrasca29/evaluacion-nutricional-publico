@@ -1,0 +1,27 @@
+# Dockerfile.test - Para probar el servicio de anemia
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Instalar dependencias
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libglib2.0-0 libsm6 libxext6 libxrender1 curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY anemia-service/requirements.txt .
+COPY anemia-service/test_service.py .
+
+RUN pip install --no-cache-dir -r requirements.txt requests pillow numpy
+
+# Script que espera a que el servicio esté listo y ejecuta pruebas
+RUN echo '#!/bin/bash\n\
+echo "Esperando que el servicio esté listo..."\n\
+for i in {1..30}; do\n\
+  curl -f http://anemia-service:8000/health && echo "Servicio listo!" && break\n\
+  echo "Intento $i/30..."\n\
+  sleep 2\n\
+done\n\
+python test_service.py\n\
+' > /entrypoint.sh && chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]

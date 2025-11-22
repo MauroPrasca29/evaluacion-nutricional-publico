@@ -36,6 +36,8 @@ export function NewFollowUpForm({ theme }: NewFollowUpFormProps) {
   const [children, setChildren] = useState<Infante[]>([])
   const [loading, setLoading] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [anemiaResult, setAnemiaResult] = useState<any>(null)
+  const [predictingAnemia, setPredictingAnemia] = useState(false)
   const [formData, setFormData] = useState<FollowUpForm>({
     childId: 0,
     weight: "",
@@ -95,6 +97,13 @@ export function NewFollowUpForm({ theme }: NewFollowUpFormProps) {
     }
   }
 
+  const calculateAgeInMonths = (birthDate: string): number => {
+    const today = new Date()
+    const birth = new Date(birthDate)
+    const ageInMonths = (today.getFullYear() - birth.getFullYear()) * 12 + (today.getMonth() - birth.getMonth())
+    return Math.max(0, ageInMonths)
+  }
+
   const calculateBMI = (weight: string, height: string) => {
     if (!weight || !height) return ""
     const weightNum = Number.parseFloat(weight)
@@ -148,6 +157,50 @@ export function NewFollowUpForm({ theme }: NewFollowUpFormProps) {
 
   const handleEyePhotosChange = (files: File[]) => {
     setFormData({ ...formData, eyePhotos: files })
+    
+    // Automáticamente predecir anemia si hay archivo y edad disponible
+    if (files.length > 0 && selectedChild) {
+      predictAnemiaFromImage(files[0])
+    }
+  }
+
+  const predictAnemiaFromImage = async (file: File) => {
+    if (!selectedChild) return
+    
+    setPredictingAnemia(true)
+    const ageMonths = calculateAgeInMonths(selectedChild.birthDate)
+    
+    try {
+      const formDataToSend = new FormData()
+      formDataToSend.append('file', file)
+      formDataToSend.append('age_months', ageMonths.toString())
+      
+      const response = await fetch('/api/vision/predict-anemia', {
+        method: 'POST',
+        body: formDataToSend
+      })
+      
+      if (response.ok) {
+        const result = await response.json()
+        console.log("Predicción de anemia:", result)
+        setAnemiaResult(result)
+        
+        toast.success("Análisis de imagen completado", {
+          description: `Hemoglobina estimada: ${result.hb_estimate_g_dL.toFixed(2)} g/dL - ${result.anemia_label}`
+        })
+      } else {
+        const error = await response.json()
+        console.error("Error en predicción:", error)
+        toast.error("Error al procesar imagen", {
+          description: error.detail || "No se pudo analizar la imagen"
+        })
+      }
+    } catch (error) {
+      console.error("Error de conexión:", error)
+      toast.error("Error al conectar con el servicio")
+    } finally {
+      setPredictingAnemia(false)
+    }
   }
 
   const handleGumPhotosChange = (files: File[]) => {
@@ -192,6 +245,32 @@ export function NewFollowUpForm({ theme }: NewFollowUpFormProps) {
 
     try {
       const observacionesClinicas = getObservacionesClinicas()
+      const ageMonths = calculateAgeInMonths(selectedChild.birthDate)
+      
+      // Determinar resultado de anemia con prioridad: hemoglobina > modelo
+      let finalAnemiaResult = null
+      
+      if (formData.hemoglobin && formData.hemoglobin.trim() !== "") {
+        // Si hay hemoglobina, usarla
+        const hbValue = parseFloat(formData.hemoglobin)
+        const threshold = ageMonths <= 59 ? 12.0 : 12.25
+        finalAnemiaResult = {
+          source: "hemoglobina",
+          value: hbValue,
+          threshold: threshold,
+          isAnemic: hbValue < threshold,
+          label: hbValue < threshold ? "Anémico" : "Normal"
+        }
+      } else if (anemiaResult) {
+        // Si no hay hemoglobina pero hay resultado del modelo
+        finalAnemiaResult = {
+          source: "modelo",
+          value: anemiaResult.hb_estimate_g_dL,
+          threshold: anemiaResult.threshold_g_dL,
+          isAnemic: anemiaResult.anemia_flag,
+          label: anemiaResult.anemia_label
+        }
+      }
       
       const seguimientoData = {
         infante_id: formData.childId,
@@ -206,7 +285,9 @@ export function NewFollowUpForm({ theme }: NewFollowUpFormProps) {
         pliegue_subescapular: parseFloat(formData.subscapularFold) || null,
         perimetro_abdominal: parseFloat(formData.abdominalPerimeter) || null,
         hemoglobina: parseFloat(formData.hemoglobin) || null,
-        foto_ojo_url: null
+        foto_ojo_url: null,
+        // Agregar resultado de anemia
+        anemia_result: finalAnemiaResult
       }
 
       console.log("Enviando seguimiento:", seguimientoData)
@@ -225,6 +306,10 @@ export function NewFollowUpForm({ theme }: NewFollowUpFormProps) {
         console.log("Seguimiento creado exitosamente:", result)
         
         sessionStorage.setItem('last_seguimiento_id', result.id_seguimiento.toString())
+        // Guardar resultado de anemia para mostrar en resultados
+        if (finalAnemiaResult) {
+          sessionStorage.setItem('anemia_result', JSON.stringify(finalAnemiaResult))
+        }
         
         toast.success("¡Seguimiento registrado exitosamente!", {
           description: `Se realizó un seguimiento nutricional a ${selectedChild.name}`,
@@ -254,6 +339,7 @@ export function NewFollowUpForm({ theme }: NewFollowUpFormProps) {
   const handleSaveToProfile = () => {
     setShowResults(false)
     setSelectedChild(null) // NUEVO: Resetear para volver a la lista
+    setAnemiaResult(null)  // Resetear resultado de anemia
     setFormData({
       childId: 0,
       weight: "",
@@ -601,7 +687,7 @@ export function NewFollowUpForm({ theme }: NewFollowUpFormProps) {
                 <CardTitle className="text-xl font-bold text-slate-800">Exámenes Complementarios</CardTitle>
               </CardHeader>
               <CardContent className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <Label htmlFor="hemoglobin">Hemoglobina (g/dL) - Opcional</Label>
                     <Input
@@ -613,6 +699,9 @@ export function NewFollowUpForm({ theme }: NewFollowUpFormProps) {
                       onChange={(e) => setFormData({ ...formData, hemoglobin: e.target.value })}
                       className="border-amber-200 focus:border-amber-400"
                     />
+                    <p className="text-xs text-slate-500">
+                      Si tienes el resultado de un examen de sangre, ingresa el valor aquí. Este valor tendrá prioridad sobre la estimación por imagen.
+                    </p>
                   </div>
                 </div>
               </CardContent>
@@ -625,18 +714,60 @@ export function NewFollowUpForm({ theme }: NewFollowUpFormProps) {
               <CardHeader>
                 <CardTitle className="text-xl font-bold text-slate-800 flex items-center gap-2">
                   <Camera className="w-5 h-5" />
-                  Fotografía Clínica
+                  Fotografía Clínica para Análisis de Anemia
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-6">
                 <div className="grid grid-cols-1 gap-6">
-                  <FileUpload
-                    id="eye-photos"
-                    label="Foto de ojos (opcional)"
-                    accept="image/*"
-                    multiple={false}
-                    onFilesChange={handleEyePhotosChange}
-                  />
+                  <div>
+                    <FileUpload
+                      id="eye-photos"
+                      label="Fotografía de ojos (para análisis de hemoglobina por imagen)"
+                      accept="image/*"
+                      multiple={false}
+                      onFilesChange={handleEyePhotosChange}
+                    />
+                    <p className="text-xs text-slate-500 mt-2">
+                      Sube una fotografía clara de la conjuntiva (parte blanca) de los ojos del infante. Se usará IA para estimar la hemoglobina.
+                    </p>
+                  </div>
+                  
+                  {predictingAnemia && (
+                    <div className="flex items-center gap-3 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                      <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
+                      <span className="text-blue-700 font-medium">Analizando imagen para detectar anemia...</span>
+                    </div>
+                  )}
+                  
+                  {anemiaResult && !predictingAnemia && (
+                    <div className={`p-4 rounded-lg border-2 ${
+                      anemiaResult.anemia_flag 
+                        ? "bg-red-50 border-red-300" 
+                        : "bg-green-50 border-green-300"
+                    }`}>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold text-slate-700">Análisis de imagen:</span>
+                          <Badge className={anemiaResult.anemia_flag ? "bg-red-600" : "bg-green-600"}>
+                            {anemiaResult.anemia_label}
+                          </Badge>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                          <div>
+                            <p className="text-slate-600">Hb Estimada:</p>
+                            <p className="font-bold text-lg">{anemiaResult.hb_estimate_g_dL.toFixed(2)} g/dL</p>
+                          </div>
+                          <div>
+                            <p className="text-slate-600">Umbral OMS:</p>
+                            <p className="font-bold text-lg">{anemiaResult.threshold_g_dL.toFixed(2)} g/dL</p>
+                          </div>
+                        </div>
+                        <p className="text-xs text-slate-600 italic pt-2">
+                          {anemiaResult.recommendation}
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>

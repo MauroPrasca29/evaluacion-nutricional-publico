@@ -94,6 +94,7 @@ nutrition_router    = _try_import_router(["api.nutrition", "src.api.nutrition"])
 sedes_router = _try_import_router(["api.sedes", "src.api.sedes"])
 acudientes_router = _try_import_router(["api.acudientes", "src.api.acudientes"])
 anemia_router = _try_import_router(["api.vision_anemia_onnx", "src.api.vision_anemia_onnx"])
+vision_router = _try_import_router(["api.vision", "src.api.vision"])
 
 # ---------- Lifespan ----------
 @asynccontextmanager
@@ -194,6 +195,8 @@ if acudientes_router:
     app.include_router(acudientes_router, prefix="/api/acudientes", tags=["acudientes"])
 if anemia_router:
     app.include_router(anemia_router, prefix="/api/vision", tags=["vision"])
+if vision_router:
+    app.include_router(vision_router, prefix="/api/vision", tags=["vision"])
 # ---------- Manejadores globales ----------
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
