@@ -97,8 +97,8 @@ services:
     depends_on:
       - backend
     environment:
-      NEXT_PUBLIC_API_BASE: http://backend:8000
-      BACKEND_BASE: http://backend:8000
+      NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-http://backend:8000}
+      BACKEND_BASE: ${BACKEND_BASE:-http://backend:8000}
       NODE_ENV: ${NODE_ENV:-development}
     ports:
       - "3000:3000"
